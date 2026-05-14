@@ -67,7 +67,6 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -284,13 +283,23 @@ function resolveVatPercentFromApi(p) {
 /**
  * Ánh xạ API → model nội bộ; các field dùng trong SelectTrigger
  * (maDanhMuc, maNccMacDinh, unit, thue/vat) được chuẩn hóa khớp SelectItem.
+ * Logic trạng thái: dựa trên tổng tồn kho (số lượng + tồn kho hiện tại)
+ * - Tổng <= 0: Hết hàng
+ * - Tổng <= 100: Sắp hết
+ * - Tổng > 100: Còn hàng
  */
 function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) {
   const stock = p.soLuong ?? 0;
   const currentInventory = p.tonKhoHienTai ?? 0;
+  const totalStock = stock + currentInventory;
+  
+  // Tính status dựa trên tổng tồn kho
   let status = "active";
-  if (stock === 0 || currentInventory === 0) status = "out_of_stock";
-  else if (stock < 50 || currentInventory < 50) status = "low_stock";
+  if (totalStock <= 0) {
+    status = "out_of_stock";
+  } else if (totalStock <= 100) {
+    status = "low_stock";
+  }
 
   const vatPercent = resolveVatPercentFromApi(p);
   const rawDonVi = String(p.donViChinh ?? p.DonViChinh ?? "").trim();
@@ -693,7 +702,6 @@ export function ProductForm({
                     onChange={(e) => {
                       const newName = e.target.value;
                       setForm((prev) => {
-                        // Auto-generate SKU if creating new product
                         if (!product && newName.trim()) {
                           const generatedSku = generateSkuFromName(newName);
                           return {
@@ -1295,10 +1303,20 @@ export function ProductTable() {
     }
   };
 
-  // Summary stats
+  // Summary stats - Tính toán dựa trên tổng tồn kho (số lượng + tồn kho hiện tại)
   const totalProducts = products.length;
-  const lowStockCount = products.filter(p => p.status === "low_stock").length;
-  const outOfStockCount = products.filter(p => p.status === "out_of_stock").length;
+  
+  // Số lượng sản phẩm sắp hết (tổng tồn kho > 0 và <= 100)
+  const lowStockCount = products.filter(p => {
+    const totalStock = (p.stock || 0) + (p.tonKhoHienTai || 0);
+    return totalStock > 0 && totalStock <= 100;
+  }).length;
+  
+  // Số lượng sản phẩm hết hàng (tổng tồn kho <= 0)
+  const outOfStockCount = products.filter(p => {
+    const totalStock = (p.stock || 0) + (p.tonKhoHienTai || 0);
+    return totalStock <= 0;
+  }).length;
 
   if (loading) return (
     <div className="flex h-96 items-center justify-center gap-3 text-muted-foreground">
@@ -1321,6 +1339,10 @@ export function ProductTable() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Sản phẩm</h1>
+          <p className="text-sm text-muted-foreground">Quản lý danh sách hàng hóa, tồn kho và giá bán</p>
+        </div>
         <Button onClick={handleAddProduct} className="gap-2" disabled={loading}>
           <Plus className="h-4 w-4" />
           Thêm sản phẩm
@@ -1475,9 +1497,6 @@ export function ProductTable() {
                             <Tabs
                               key={product.id}
                               defaultValue="product-info"
-                              onValueChange={(val) => {
-                                // No need to fetch additional data
-                              }}
                             >
                               <TabsList className="h-9 rounded-lg bg-muted/60 p-1">
                                 <TabsTrigger value="product-info" className="gap-1.5 rounded-md px-4 text-xs">
