@@ -1,0 +1,910 @@
+"use client";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Search, X, Plus, Minus, Trash2, CreditCard, Banknote,
+  ArrowLeft, User, ShoppingCart, Package, UserCheck,
+  AlertCircle, Loader2, RefreshCw, CheckCircle2, Printer,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Link } from "react-router-dom";
+import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
+
+const BASE_URL = "http://localhost:5128/api";
+
+// ── Tiện ích ──────────────────────────────────────────────────────────────────
+
+function parseAmountDisplay(value) {
+  return Number(String(value).replace(/\D/g, "")) || 0;
+}
+
+function toText(value) {
+  return value == null ? "" : String(value);
+}
+
+function toNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+/** Bỏ dấu tiếng Việt để so sánh không phân biệt dấu */
+function removeAccents(str) {
+  return toText(str)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+/** Map khách hàng từ API → format nội bộ */
+function mapCustomer(c) {
+  return {
+    id: toText(c.maKhachHang),
+    name: toText(c.hoTen),
+    phone: toText(c.soDienThoai),
+    address: toText(c.diaChi),
+    hanMucNo: toNumber(c.hanMucNo),
+  };
+}
+
+export default function POSPage() {
+  // ── Dữ liệu từ API ───────────────────────────────────────────────────────
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState(["Tất cả"]);
+  const [customers, setCustomers] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
+
+  // ── Trạng thái POS ───────────────────────────────────────────────────────
+  const [cart, setCart] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("Tất cả");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [discount, setDiscount] = useState(0);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerListOpen, setCustomerListOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState(false);
+  const [amountPaid, setAmountPaid] = useState("");
+  const [linePriceEdit, setLinePriceEdit] = useState(null);
+  const [qtyEdit, setQtyEdit] = useState(null);
+
+  const searchRef = useRef(null);
+  const customerInputRef = useRef(null);
+
+  // ── Fetch toàn bộ dữ liệu ban đầu ───────────────────────────────────────
+  const loadData = useCallback(async () => {
+    try {
+      setLoadingData(true);
+      setFetchError(null);
+
+      const [spRes, dmRes, khRes] = await Promise.all([
+        fetch(`${BASE_URL}/SanPhams`),
+        fetch(`${BASE_URL}/DanhMucs`),
+        fetch(`${BASE_URL}/KhachHangs`),
+      ]);
+
+      if (!spRes.ok) throw new Error(`SanPhams: ${spRes.status}`);
+      if (!dmRes.ok) throw new Error(`DanhMucs: ${dmRes.status}`);
+      if (!khRes.ok) throw new Error(`KhachHangs: ${khRes.status}`);
+
+      const [spJson, dmJson, khJson] = await Promise.all([
+        spRes.json(), dmRes.json(), khRes.json(),
+      ]);
+
+      const dmList = dmJson?.data ?? [];
+      const dmMap = Object.fromEntries(dmList.map((d) => [d.maDanhMuc, d.tenDanhMuc]));
+
+      setProducts(
+	        (spJson?.data ?? []).map((p) => ({
+	          id: toText(p.maSanPham),
+	          name: toText(p.tenSanPham),
+	          sku: toText(p.maSku),
+	          price: toNumber(p.giaBanLe),
+	          cost: toNumber(p.giaNhapGanNhat),
+	          unit: toText(p.donViChinh) || "Cái",
+	          category: dmMap[p.maDanhMuc] ?? "Khác",
+	          stock: toNumber(p.tonKhoHienTai ?? p.soLuong ?? p.tonKho ?? p.tonKhoToiDa, 9999),
+	        }))
+	      );
+      setCategories(["Tất cả", ...dmList.map((d) => d.tenDanhMuc).filter(Boolean)]);
+      setCustomers((khJson?.data ?? []).map(mapCustomer));
+    } catch (err) {
+      console.error(err);
+      setFetchError(
+        err.message.includes("Failed to fetch")
+          ? "Không thể kết nối đến server. Kiểm tra API đang chạy chưa."
+          : `Lỗi: ${err.message}`
+      );
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ── Giá trị phái sinh ────────────────────────────────────────────────────
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+
+  /** Lọc khách hàng — không phân biệt dấu */
+  const filteredCustomers = useMemo(() => {
+    const q = removeAccents(customerQuery);
+    if (!q) return customers;
+	    return customers.filter(
+	      (c) =>
+	        removeAccents(c.name).includes(q) ||
+	        toText(c.phone).replace(/\s/g, "").includes(q.replace(/\s/g, ""))
+	    );
+  }, [customerQuery, customers]);
+
+  const searchTrimmed = search.trim();
+  const hasSearchQuery = searchTrimmed.length > 0;
+
+  /** Lọc sản phẩm — không phân biệt dấu */
+  const filteredProducts = useMemo(() => {
+    if (!hasSearchQuery) return [];
+    const q = removeAccents(searchTrimmed);
+    return products.filter((p) => {
+      const matchSearch =
+        removeAccents(p.name).includes(q) ||
+        removeAccents(p.sku).includes(q);
+      const matchCat =
+        selectedCategory === "Tất cả" || p.category === selectedCategory;
+      return matchSearch && matchCat;
+    });
+  }, [hasSearchQuery, searchTrimmed, selectedCategory, products]);
+
+  const subtotal = cart.reduce((s, i) => s + toNumber(i.price) * toNumber(i.quantity), 0);
+  const total = subtotal - discount;
+  const paidAmount = parseAmountDisplay(amountPaid);
+  const shortfall = Math.max(0, total - paidAmount);
+  const change = paidAmount > total ? paidAmount - total : 0;
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => { searchRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    setAmountPaid(total > 0 ? new Intl.NumberFormat("vi-VN").format(total) : "");
+  }, [total]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "F2") { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.key === "F9" && cart.length) { e.preventDefault(); setCheckoutOpen(true); }
+      if (e.key === "Escape") { setSearch(""); searchRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cart.length]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const fmt = (n) => new Intl.NumberFormat("vi-VN").format(toNumber(n));
+  const handleOpenPrintPage = useCallback(() => {
+    if (cart.length === 0) return;
+
+    const draft = createPrintDraft({
+      cart,
+      selectedCustomer,
+      paymentMethod,
+      discount,
+      amountPaid: paidAmount,
+    });
+
+    window.localStorage.setItem(POS_PRINT_DRAFT_KEY, JSON.stringify(draft));
+
+    const printWindow = window.open("/pos/print", "_blank");
+    if (!printWindow) {
+      window.location.assign("/pos/print");
+    }
+  }, [cart, discount, paidAmount, paymentMethod, selectedCustomer]);
+
+  const addToCart = useCallback((product) => {
+    setCart((prev) => {
+      const existing = prev.find((i) => i.id === product.id);
+      if (existing) {
+        if (existing.quantity >= product.stock) return prev;
+        return prev.map((i) =>
+          i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  }, []);
+
+  const addToCartFromSearch = useCallback(
+    (p) => { addToCart(p); setSearch(""); searchRef.current?.focus(); },
+    [addToCart]
+  );
+
+  const updateQuantity = (id, delta) => {
+    setCart((prev) => {
+      const item = prev.find((i) => i.id === id);
+      if (!item) return prev;
+      const qty = item.quantity + delta;
+      if (qty <= 0) return prev.filter((i) => i.id !== id);
+      if (qty > item.stock) return prev;
+      return prev.map((i) => (i.id === id ? { ...i, quantity: qty } : i));
+    });
+  };
+
+  const commitQuantity = (id, raw) => {
+    setCart((prev) => {
+      const item = prev.find((i) => i.id === id);
+      if (!item) return prev;
+      let n = parseInt(String(raw).replace(/\D/g, ""), 10);
+      if (!Number.isFinite(n) || n <= 0) n = 1;
+      return prev.map((i) => (i.id === id ? { ...i, quantity: Math.min(n, i.stock) } : i));
+    });
+  };
+
+  const removeFromCart = (id) => setCart((prev) => prev.filter((i) => i.id !== id));
+
+  const clearCart = () => {
+    setCart([]);
+    setDiscount(0);
+    setSelectedCustomerId("");
+    setCustomerQuery("");
+    setAmountPaid("");
+    setPaymentMethod(false);
+    setSubmitError(null);
+    setCheckoutSuccess(false);
+  };
+
+  const selectCustomer = (c) => {
+    setSelectedCustomerId(c.id);
+    setCustomerQuery(c.name);
+    setCustomerListOpen(false);
+  };
+
+  const clearCustomerSelection = () => {
+    setSelectedCustomerId("");
+    setCustomerQuery("");
+  };
+
+  // ── Gửi đơn hàng ─────────────────────────────────────────────────────────
+  const handleCheckout = async () => {
+    try {
+      setSubmitting(true);
+      setSubmitError(null);
+
+      const payload = {
+        donHang: {
+          maDonHang: 0, //Tự tăng
+          maKhachHang: selectedCustomer ? Number(selectedCustomer.id) : 1,
+          maNguoiTao: 1,
+          ngayTao: new Date().toISOString(),
+          tongTien: total,
+          trangThaiThanhToan: paidAmount >= total ? "da_thanh_toan" : "tra_mot_phan",
+          hinhThuc: paymentMethod,
+          soTienTra: paidAmount,
+        },
+        chiTietDonHangs: cart.map((item) => ({
+          id: 0,
+          maSanPham: Number(item.id),
+          soLuong: item.quantity,
+          donViTinh: item.unit,
+          donGia: item.price,
+          thanhTien: item.price * item.quantity,
+        })),
+      };
+
+      const res = await fetch(`${BASE_URL}/DonHangs/themgiohang`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+
+      setCheckoutSuccess(true);
+    } catch (err) {
+      setSubmitError(
+        err.message.includes("Failed to fetch")
+          ? "Không thể kết nối server khi gửi đơn hàng."
+          : `Lỗi gửi đơn: ${err.message}`
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCloseSuccess = () => {
+    clearCart();
+    setCheckoutOpen(false);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  return (
+    <div className="flex h-screen">
+
+      {/* ── Panel trái ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col border-r border-border min-w-0">
+
+        {/* Header */}
+        <header className="flex items-center justify-between gap-4 border-b border-border bg-card p-4 shrink-0">
+          <Link
+            to="/admin"
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            <span className="font-medium">Thoát</span>
+          </Link>
+
+          <div className="flex-1 max-w-xl">
+            <div className="relative z-50">
+              <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground pointer-events-none z-10" />
+              <Input
+                ref={searchRef}
+                type="text"
+                inputMode="search"
+                enterKeyHint="search"
+                placeholder={loadingData ? "Đang tải sản phẩm..." : "Tìm sản phẩm (F2)..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                autoComplete="off"
+                disabled={loadingData}
+                aria-expanded={hasSearchQuery}
+                aria-controls="pos-product-search-panel"
+                className={cn(
+                  "pl-11 h-12 text-lg bg-secondary border-0 relative z-10",
+                  search && "pr-11"
+                )}
+              />
+              {loadingData && (
+                <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground animate-spin z-10" />
+              )}
+              {search && !loadingData && (
+                <Button
+                  variant="ghost" size="icon"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 z-10"
+                  onClick={() => setSearch("")}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+
+              {/* Dropdown kết quả tìm kiếm */}
+              {hasSearchQuery && !loadingData && (
+                <div
+                  id="pos-product-search-panel"
+                  role="listbox"
+                  className="absolute left-0 right-0 top-full mt-1 rounded-md border border-border bg-card shadow-lg overflow-hidden"
+                >
+                  <div className="max-h-[min(40vh,220px)] overflow-auto px-2 pb-2">
+                    {filteredProducts.length === 0 ? (
+                      <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
+                        Không có sản phẩm phù hợp
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-border rounded-md border bg-background">
+                        {filteredProducts.map((product) => {
+                          const isOutOfStock = product.stock === 0;
+                          return (
+                            <li key={product.id} role="option">
+                              <button
+                                type="button"
+                                disabled={isOutOfStock}
+                                onClick={() => addToCartFromSearch(product)}
+                                className={cn(
+                                  "w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-secondary/80 transition-colors",
+                                  isOutOfStock && "opacity-50 cursor-not-allowed"
+                                )}
+                              >
+                                <Package className="h-4 w-4 text-muted-foreground shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm truncate">{product.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {product.sku} · {product.category}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <p className="font-semibold text-sm text-primary">
+                                    {fmt(product.price)}đ
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">/{product.unit}</p>
+                                </div>
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            <Button
+              variant="outline"
+              className="h-12 gap-2 px-4"
+              disabled={cart.length === 0}
+              onClick={handleOpenPrintPage}
+            >
+              <Printer className="h-4 w-4" />
+              In
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-3 text-sm text-muted-foreground shrink-0">
+            {fetchError ? (
+              <Button variant="ghost" size="sm" onClick={loadData}
+                className="text-destructive hover:text-destructive gap-1">
+                <RefreshCw className="h-4 w-4" />
+                Thử lại
+              </Button>
+            ) : (
+              <>
+                <span>F2: Tìm kiếm</span>
+                <span>|</span>
+                <span>F9: Thanh toán</span>
+              </>
+            )}
+          </div>
+        </header>
+
+        {/* Thông báo lỗi fetch */}
+        {fetchError && (
+          <div className="mx-4 mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{fetchError}</span>
+          </div>
+        )}
+
+        {/* Giỏ hàng */}
+        <div className="flex-1 overflow-auto p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-base flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-primary" />
+              Hàng đã chọn
+              {cart.length > 0 && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
+                </span>
+              )}
+            </h2>
+            {cart.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearCart}
+                className="text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4 mr-1" />
+                Xóa tất cả
+              </Button>
+            )}
+          </div>
+
+          {loadingData && cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground gap-3">
+              <Loader2 className="h-10 w-10 animate-spin opacity-40" />
+              <p className="text-sm">Đang tải dữ liệu...</p>
+            </div>
+          ) : cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
+              <Package className="h-14 w-14 mb-3 opacity-60" />
+              <p className="text-sm">Chưa có hàng trên đơn</p>
+              <p className="text-xs mt-1">Tìm kiếm phía trên rồi chọn để thêm</p>
+            </div>
+          ) : (
+            <div className="rounded-md border bg-card overflow-x-auto">
+              <div
+                className="min-w-[720px] grid gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/40 items-center"
+                style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
+              >
+                <div>Sản phẩm</div>
+                <div>Giá vốn</div>
+                <div className="text-right">Giá bán</div>
+                <div className="text-center">Số lượng</div>
+                <div className="text-right">Thành tiền</div>
+                <div className="sr-only">Thao tác</div>
+              </div>
+
+              {cart.map((item) => (
+                <div
+                  key={item.id}
+                  className="min-w-[720px] grid gap-2 px-3 py-2.5 border-b border-border last:border-b-0 items-center hover:bg-muted/20"
+                  style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
+                >
+                  {/* Tên */}
+                  <div className="min-w-0 flex items-start gap-2">
+                    <div className="h-10 w-10 rounded-md bg-secondary flex items-center justify-center shrink-0">
+                      <Package className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
+                    </div>
+                  </div>
+
+                  {/* Giá vốn */}
+                  <div className="text-sm text-muted-foreground">{fmt(item.cost ?? 0)}đ</div>
+
+                  {/* Giá bán editable */}
+                  <div className="text-right">
+                    <Input
+                      className="h-9 text-right font-medium text-sm px-2"
+                      inputMode="numeric"
+                      value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
+                      onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, "");
+                        setLinePriceEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                      }}
+                      onBlur={() => {
+                        if (linePriceEdit?.id !== item.id) return;
+                        const price = Math.max(0, Number(linePriceEdit.raw) || 0);
+                        setCart((c) => c.map((i) => i.id === item.id ? { ...i, price } : i));
+                        setLinePriceEdit(null);
+                      }}
+                    />
+                  </div>
+
+                  {/* Số lượng */}
+                  <div className="flex items-center gap-0.5 justify-center">
+                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => { setQtyEdit(null); updateQuantity(item.id, -1); }}
+                      aria-label="Giảm">
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                    <Input
+                      className="h-9 w-14 text-center font-medium text-sm px-1"
+                      inputMode="numeric"
+                      value={qtyEdit?.id === item.id ? qtyEdit.raw : String(item.quantity)}
+                      onFocus={() => setQtyEdit({ id: item.id, raw: String(item.quantity) })}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, "");
+                        setQtyEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                      }}
+                      onBlur={() => {
+                        if (qtyEdit?.id !== item.id) return;
+                        commitQuantity(item.id, qtyEdit.raw);
+                        setQtyEdit(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (qtyEdit?.id === item.id) {
+                            commitQuantity(item.id, qtyEdit.raw);
+                            setQtyEdit(null);
+                          }
+                          e.currentTarget.blur();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
+                      onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
+                      disabled={item.quantity >= item.stock}
+                      aria-label="Tăng">
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Thành tiền */}
+                  <div className="text-right font-semibold text-sm text-primary tabular-nums">
+                    {fmt(item.price * item.quantity)}đ
+                  </div>
+
+                  {/* Xóa */}
+                  <div className="flex justify-end">
+                    <Button type="button" variant="ghost" size="icon"
+                      className="h-9 w-9 text-destructive hover:text-destructive shrink-0"
+                      onClick={() => removeFromCart(item.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Panel phải ─────────────────────────────────────────────────────── */}
+      <div className="w-[400px] flex flex-col bg-card border-l border-border shrink-0 relative z-50">
+
+        {/* Chọn khách hàng */}
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center gap-2 mb-2">
+            <UserCheck className="h-4 w-4 text-primary" />
+            <span className="font-medium text-sm">Khách hàng</span>
+            {loadingData && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            )}
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Input
+              ref={customerInputRef}
+              className="pl-9 pr-9"
+              placeholder="Tìm tên hoặc SĐT..."
+              value={customerQuery}
+              disabled={loadingData}
+              onChange={(e) => {
+                setCustomerQuery(e.target.value);
+                setSelectedCustomerId("");
+                setCustomerListOpen(true);
+              }}
+              onFocus={() => setCustomerListOpen(true)}
+            />
+            {customerQuery && (
+              <Button type="button" variant="ghost" size="icon"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                onClick={clearCustomerSelection}>
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+
+            {customerListOpen && filteredCustomers.length > 0 && (
+              <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
+                {filteredCustomers.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => selectCustomer(c)}
+                    >
+                      <p className="font-medium text-sm">{c.name}</p>
+                      <p className="text-xs text-muted-foreground">{c.phone}</p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {selectedCustomer && (
+            <div className="mt-2 text-xs space-y-1 rounded-md border bg-secondary/30 p-2.5">
+              <p className="text-muted-foreground">SĐT: {selectedCustomer.phone}</p>
+              <p className="text-muted-foreground">ĐC: {selectedCustomer.address}</p>
+              {selectedCustomer.hanMucNo > 0 && (
+                <p className="text-muted-foreground">
+                  Hạn mức nợ: {fmt(selectedCustomer.hanMucNo)}đ
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tạm tính */}
+        <div className="flex-1 overflow-auto p-4 flex flex-col justify-end min-h-0">
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
+              </span>
+              <span>{fmt(subtotal)}đ</span>
+            </div>
+            <div className="flex justify-between text-lg font-bold border-t pt-2">
+              <span>Tổng cộng</span>
+              <span className="text-primary">{fmt(total)}đ</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Khách trả + nút thanh toán */}
+        <div className="border-t border-border p-4 space-y-4">
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Khách trả:</span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={amountPaid}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, "");
+                  setAmountPaid(v ? fmt(Number(v)) : "");
+                }}
+                className="flex-1 text-right font-semibold h-10"
+                placeholder="0"
+              />
+            </div>
+            {paidAmount > 0 && paidAmount < total && (
+              <div className="flex justify-between text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 p-2 rounded-md">
+                <span className="flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  Còn thiếu:
+                </span>
+                <span>{fmt(shortfall)}đ</span>
+              </div>
+            )}
+            {paidAmount >= total && paidAmount > 0 && (
+              <div className="flex justify-between text-sm font-medium text-success bg-success/10 p-2 rounded-md">
+                <span>Tiền thừa:</span>
+                <span>{fmt(change)}đ</span>
+              </div>
+            )}
+          </div>
+
+          <Button
+            size="lg"
+            className="w-full h-14 text-lg gap-2 bg-accent hover:bg-accent/90 text-accent-foreground"
+            disabled={cart.length === 0}
+            onClick={() => setCheckoutOpen(true)}
+          >
+            <CreditCard className="h-5 w-5" />
+            Thanh toán (F9)
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Dialog thanh toán ─────────────────────────────────────────────── */}
+      <Dialog
+        open={checkoutOpen}
+        onOpenChange={(o) => {
+          if (!o && checkoutSuccess) { handleCloseSuccess(); return; }
+          if (!submitting) setCheckoutOpen(o);
+        }}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Thanh toán</DialogTitle>
+            <DialogDescription>
+              Hoàn tất đơn hàng và chọn phương thức thanh toán
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Màn hình thành công */}
+          {checkoutSuccess ? (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <CheckCircle2 className="h-16 w-16 text-success" />
+              <div className="text-center space-y-1">
+                <p className="font-semibold text-lg">Đơn hàng đã ghi nhận!</p>
+                <p className="text-sm text-muted-foreground">
+                  Tổng: {fmt(total)}đ · Khách trả: {fmt(paidAmount)}đ
+                  {change > 0 && ` · Trả lại: ${fmt(change)}đ`}
+                </p>
+                {selectedCustomer && (
+                  <p className="text-sm text-muted-foreground">
+                    Khách hàng: {selectedCustomer.name}
+                  </p>
+                )}
+              </div>
+              <Button size="lg" className="mt-2 w-full" onClick={handleCloseSuccess}>
+                Tạo đơn mới
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Khách hàng */}
+              <div className="space-y-3">
+                <h3 className="font-medium flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Khách hàng
+                </h3>
+                {selectedCustomer ? (
+                  <div className="rounded-lg border p-3 bg-secondary/30">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{selectedCustomer.name}</p>
+                        <p className="text-sm text-muted-foreground">{selectedCustomer.phone}</p>
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={clearCustomerSelection}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Khách lẻ (chưa chọn khách)</p>
+                )}
+              </div>
+
+              {/* Tóm tắt đơn */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
+                  </span>
+                  <span>{fmt(subtotal)}đ</span>
+                </div>
+                <div className="flex justify-between font-bold text-lg border-t pt-3">
+                  <span>Tổng cộng</span>
+                  <span className="text-primary">{fmt(total)}đ</span>
+                </div>
+              </div>
+
+              {/* Phương thức */}
+              <div className="space-y-3">
+                <h3 className="font-medium">Phương thức thanh toán</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant={paymentMethod === false ? "default" : "outline"}
+                    className="h-14 flex-col gap-1"
+                    onClick={() => setPaymentMethod(false)}
+                  >
+                    <Banknote className="h-5 w-5" />
+                    <span className="text-xs">Tiền mặt</span>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === true ? "default" : "outline"}
+                    className="h-14 flex-col gap-1"
+                    onClick={() => setPaymentMethod(true)}
+                  >
+                    <CreditCard className="h-5 w-5" />
+                    <span className="text-xs">Chuyển khoản</span>
+                  </Button>
+                </div>
+              </div>
+
+              {/* Số tiền */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-muted-foreground whitespace-nowrap">Khách trả:</span>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={amountPaid}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/\D/g, "");
+                      setAmountPaid(v ? fmt(Number(v)) : "");
+                    }}
+                    className="flex-1 text-right text-lg font-semibold"
+                    placeholder="0"
+                  />
+                </div>
+                {paidAmount > 0 && paidAmount < total && (
+                  <div className="flex justify-between p-3 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                    <span className="font-medium flex items-center gap-1">
+                      <AlertCircle className="h-4 w-4 shrink-0" />
+                      Còn thiếu:
+                    </span>
+                    <span className="font-bold">{fmt(shortfall)}đ</span>
+                  </div>
+                )}
+                {paidAmount >= total && paidAmount > 0 && (
+                  <div className="flex justify-between p-3 rounded-lg bg-success/10 text-success">
+                    <span className="font-medium">Tiền thừa:</span>
+                    <span className="font-bold">{fmt(change)}đ</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Lỗi gửi đơn */}
+              {submitError && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              <Button
+                size="lg"
+                className="w-full h-14 text-lg bg-accent hover:bg-accent/90 text-accent-foreground gap-2"
+                onClick={handleCheckout}
+                disabled={submitting || cart.length === 0}
+              >
+                {submitting
+                  ? <><Loader2 className="h-5 w-5 animate-spin" />Đang xử lý...</>
+                  : <><CreditCard className="h-5 w-5" />Xác nhận thanh toán</>
+                }
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Đóng dropdown khách khi click ra ngoài */}
+      {customerListOpen && (
+        <button
+          type="button"
+          aria-label="Đóng danh sách"
+          className="fixed inset-0 z-40 cursor-default bg-transparent"
+          onClick={() => setCustomerListOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
