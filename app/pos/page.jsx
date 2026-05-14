@@ -58,6 +58,18 @@ function mapCustomer(c) {
   };
 }
 
+/**
+ * Tính trạng thái tồn kho dựa trên tổng tồn kho (số lượng + tồn kho hiện tại)
+ * - Tổng <= 0: Hết hàng
+ * - Tổng <= 100: Sắp hết
+ * - Tổng > 100: Còn hàng
+ */
+function getStockStatus(totalStock) {
+  if (totalStock <= 0) return { label: "Hết hàng", className: "bg-destructive/10 text-destructive border-destructive/20" };
+  if (totalStock <= 100) return { label: "Sắp hết", className: "bg-amber-100 text-amber-700 border-amber-200" };
+  return { label: "Còn hàng", className: "bg-emerald-100 text-emerald-700 border-emerald-200" };
+}
+
 export default function POSPage() {
   // ── Dữ liệu từ API ───────────────────────────────────────────────────────
   const [products, setProducts] = useState([]);
@@ -110,16 +122,25 @@ export default function POSPage() {
       const dmMap = Object.fromEntries(dmList.map((d) => [d.maDanhMuc, d.tenDanhMuc]));
 
       setProducts(
-        (spJson?.data ?? []).map((p) => ({
-          id: toText(p.maSanPham),
-          name: toText(p.tenSanPham),
-          sku: toText(p.maSku),
-          price: toNumber(p.giaBanLe),
-          cost: toNumber(p.giaNhapGanNhat),
-          unit: toText(p.donViChinh) || "Cái",
-          category: dmMap[p.maDanhMuc] ?? "Khác",
-          stock: toNumber(p.tonKhoHienTai ?? p.soLuong ?? p.tonKho ?? p.tonKhoToiDa, 9999),
-        }))
+        (spJson?.data ?? []).map((p) => {
+          const stock = toNumber(p.soLuong ?? 0);
+          const currentInventory = toNumber(p.tonKhoHienTai ?? 0);
+          const totalStock = stock + currentInventory;
+          
+          return {
+            id: toText(p.maSanPham),
+            name: toText(p.tenSanPham),
+            sku: toText(p.maSku),
+            price: toNumber(p.giaBanLe),
+            cost: toNumber(p.giaNhapGanNhat),
+            unit: toText(p.donViChinh) || "Cái",
+            category: dmMap[p.maDanhMuc] ?? "Khác",
+            stock: stock,
+            tonKhoHienTai: currentInventory,
+            totalStock: totalStock,
+            status: getStockStatus(totalStock),
+          };
+        })
       );
       setCategories(["Tất cả", ...dmList.map((d) => d.tenDanhMuc).filter(Boolean)]);
       setCustomers((khJson?.data ?? []).map(mapCustomer));
@@ -217,12 +238,16 @@ export default function POSPage() {
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stock) return prev;
+        if (existing.quantity >= product.totalStock) return prev;
         return prev.map((i) =>
           i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { 
+        ...product, 
+        quantity: 1,
+        maxStock: product.totalStock 
+      }];
     });
   }, []);
 
@@ -237,7 +262,7 @@ export default function POSPage() {
       if (!item) return prev;
       const qty = item.quantity + delta;
       if (qty <= 0) return prev.filter((i) => i.id !== id);
-      if (qty > item.stock) return prev;
+      if (qty > item.maxStock) return prev;
       return prev.map((i) => (i.id === id ? { ...i, quantity: qty } : i));
     });
   };
@@ -248,7 +273,7 @@ export default function POSPage() {
       if (!item) return prev;
       let n = parseInt(String(raw).replace(/\D/g, ""), 10);
       if (!Number.isFinite(n) || n <= 0) n = 1;
-      return prev.map((i) => (i.id === id ? { ...i, quantity: Math.min(n, i.stock) } : i));
+      return prev.map((i) => (i.id === id ? { ...i, quantity: Math.min(n, i.maxStock) } : i));
     });
   };
 
@@ -333,6 +358,9 @@ export default function POSPage() {
     setCheckoutOpen(false);
   };
 
+  // ── Category Filters ─────────────────────────────────────────────────────
+  const [showCategoryFilter, setShowCategoryFilter] = useState(false);
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen bg-background">
@@ -390,7 +418,7 @@ export default function POSPage() {
                   role="listbox"
                   className="absolute left-0 right-0 top-full mt-2 rounded-xl border bg-card shadow-lg overflow-hidden"
                 >
-                  <div className="max-h-[min(40vh,220px)] overflow-auto">
+                  <div className="max-h-[min(40vh,280px)] overflow-auto">
                     {filteredProducts.length === 0 ? (
                       <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
                         Không có sản phẩm phù hợp
@@ -398,7 +426,8 @@ export default function POSPage() {
                     ) : (
                       <div className="divide-y">
                         {filteredProducts.map((product) => {
-                          const isOutOfStock = product.stock === 0;
+                          const isOutOfStock = product.totalStock <= 0;
+                          const status = product.status;
                           return (
                             <button
                               key={product.id}
@@ -418,12 +447,23 @@ export default function POSPage() {
                                 <p className="text-xs text-muted-foreground">
                                   {product.sku} · {product.category}
                                 </p>
+                                <div className="mt-1">
+                                  <span className={cn(
+                                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium",
+                                    status.className
+                                  )}>
+                                    {status.label}
+                                  </span>
+                                </div>
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="font-bold text-sm text-primary">
                                   {fmt(product.price)}đ
                                 </p>
                                 <p className="text-xs text-muted-foreground">/{product.unit}</p>
+                                <p className="text-[10px] text-muted-foreground mt-1">
+                                  Tồn: {product.totalStock}
+                                </p>
                               </div>
                             </button>
                           );
@@ -464,6 +504,49 @@ export default function POSPage() {
             )}
           </div>
         </header>
+
+        {/* Category Filter Bar */}
+        {!loadingData && products.length > 0 && (
+          <div className="flex flex-wrap gap-2 px-4 pt-4 border-b pb-3">
+            {categories.slice(0, 8).map((cat) => (
+              <Button
+                key={cat}
+                variant={selectedCategory === cat ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedCategory(cat)}
+                className="text-sm rounded-full px-4 h-8"
+              >
+                {cat}
+              </Button>
+            ))}
+            {categories.length > 8 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCategoryFilter(!showCategoryFilter)}
+                className="text-sm rounded-full px-4 h-8"
+              >
+                {showCategoryFilter ? "Thu gọn" : "Xem thêm"}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {showCategoryFilter && categories.length > 8 && (
+          <div className="flex flex-wrap gap-2 px-4 pt-2 pb-3 border-b">
+            {categories.slice(8).map((cat) => (
+              <Button
+                key={cat}
+                variant={selectedCategory === cat ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedCategory(cat)}
+                className="text-sm rounded-full px-4 h-8"
+              >
+                {cat}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {/* Thông báo lỗi fetch */}
         {fetchError && (
@@ -538,6 +621,9 @@ export default function POSPage() {
                         <div className="min-w-0">
                           <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
                           <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Tồn: {item.maxStock} {item.unit}
+                          </p>
                         </div>
                       </div>
 
@@ -597,7 +683,7 @@ export default function POSPage() {
                         />
                         <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
                           onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
-                          disabled={item.quantity >= item.stock}
+                          disabled={item.quantity >= item.maxStock}
                           aria-label="Tăng">
                           <Plus className="h-3.5 w-3.5" />
                         </Button>
