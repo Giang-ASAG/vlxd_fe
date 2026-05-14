@@ -66,7 +66,7 @@ export default function LoginPage() {
       setSubmitting(true);
 
       // Gọi API đăng nhập
-      const response = await fetch("http://localhost:5128/api/XacThucNguoiDung/login", {
+      const response = await fetch("https://vlxdbe-production.up.railway.app/api/XacThucNguoiDung/login", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
