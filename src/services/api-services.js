@@ -111,6 +111,10 @@ export const ThongKeService = {
    * groupBy: day | month | quarter | year
    * dau, cuoi: YYYY-MM-DD
    */
+  donHangGanNhat: () => api.get("/ThongKe/donhangGanNhat"),
+  doanhThuTuan: () => api.get("/ThongKe/doanhthuTuan"), 
+  homNay:         () => api.get("/ThongKe/homnay"),   
+  spBanChay: (limit = 5) => api.get(`/ThongKe/spBanChay?limit=${limit}`), 
   baoCaoTaiChinh: ({ dau, cuoi, groupBy }) =>
     api.get(`/ThongKe/bao-cao-tai-chinh-theo-ngay?dau=${encodeURIComponent(dau)}&cuoi=${encodeURIComponent(cuoi)}&groupBy=${encodeURIComponent(groupBy)}`),
 };
@@ -136,7 +140,6 @@ export const PurchaseOrderService = {
    */
   nhapThemHang: (data) => api.post("/PhieuNhapKhos/nhap-them-hang", data),
 };
-
 export const SupplierPaymentService = {
   /**
    * Lịch sử thanh toán nhà cung cấp
@@ -148,3 +151,22 @@ export const SupplierPaymentService = {
    */
   create: (data) => api.post("/CongNoNccs", data),
 };
+export const InvoiceService = {
+  /**
+   * Lấy danh sách hoá đơn
+   */
+  getAll: () => api.get("/DonHangs/HoaDon"),
+};
+export const CongNoNccService = {
+  getBySupplier: (supplierId) => api.get(`/CongNoNccs/nha-cung-cap/${supplierId}`),
+};
+
+export const LichSuThanhToanService = {
+  getBy: (id, isNcc) => api.get(`/LichSuThanhToans/${id}?isNcc=${isNcc}`),
+  create: (records) => api.post("/LichSuThanhToans", records),
+};
+export const CongNoKhachHangService = {
+  getByCustomer: (customerId) =>
+    api.get(`/CongNoKhachHang/khach-hang/${customerId}?pageNumber=1&pageSize=20`),
+};
+

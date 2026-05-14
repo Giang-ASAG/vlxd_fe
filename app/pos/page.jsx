@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,8 +18,9 @@ import {
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
+import { getSession } from "@/src/auth/session";
 
-const BASE_URL = "https://vlxdbe-production.up.railway.app";
+const BASE_URL = "https://vlxdbe-production.up.railway.app/api";
 
 // ── Tiện ích ──────────────────────────────────────────────────────────────────
 
@@ -108,17 +110,17 @@ export default function POSPage() {
       const dmMap = Object.fromEntries(dmList.map((d) => [d.maDanhMuc, d.tenDanhMuc]));
 
       setProducts(
-	        (spJson?.data ?? []).map((p) => ({
-	          id: toText(p.maSanPham),
-	          name: toText(p.tenSanPham),
-	          sku: toText(p.maSku),
-	          price: toNumber(p.giaBanLe),
-	          cost: toNumber(p.giaNhapGanNhat),
-	          unit: toText(p.donViChinh) || "Cái",
-	          category: dmMap[p.maDanhMuc] ?? "Khác",
-	          stock: toNumber(p.tonKhoHienTai ?? p.soLuong ?? p.tonKho ?? p.tonKhoToiDa, 9999),
-	        }))
-	      );
+        (spJson?.data ?? []).map((p) => ({
+          id: toText(p.maSanPham),
+          name: toText(p.tenSanPham),
+          sku: toText(p.maSku),
+          price: toNumber(p.giaBanLe),
+          cost: toNumber(p.giaNhapGanNhat),
+          unit: toText(p.donViChinh) || "Cái",
+          category: dmMap[p.maDanhMuc] ?? "Khác",
+          stock: toNumber(p.tonKhoHienTai ?? p.soLuong ?? p.tonKho ?? p.tonKhoToiDa, 9999),
+        }))
+      );
       setCategories(["Tất cả", ...dmList.map((d) => d.tenDanhMuc).filter(Boolean)]);
       setCustomers((khJson?.data ?? []).map(mapCustomer));
     } catch (err) {
@@ -142,11 +144,11 @@ export default function POSPage() {
   const filteredCustomers = useMemo(() => {
     const q = removeAccents(customerQuery);
     if (!q) return customers;
-	    return customers.filter(
-	      (c) =>
-	        removeAccents(c.name).includes(q) ||
-	        toText(c.phone).replace(/\s/g, "").includes(q.replace(/\s/g, ""))
-	    );
+    return customers.filter(
+      (c) =>
+        removeAccents(c.name).includes(q) ||
+        toText(c.phone).replace(/\s/g, "").includes(q.replace(/\s/g, ""))
+    );
   }, [customerQuery, customers]);
 
   const searchTrimmed = search.trim();
@@ -191,6 +193,7 @@ export default function POSPage() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const fmt = (n) => new Intl.NumberFormat("vi-VN").format(toNumber(n));
+  
   const handleOpenPrintPage = useCallback(() => {
     if (cart.length === 0) return;
 
@@ -272,7 +275,9 @@ export default function POSPage() {
     setSelectedCustomerId("");
     setCustomerQuery("");
   };
-
+  
+  const session = getSession();
+  
   // ── Gửi đơn hàng ─────────────────────────────────────────────────────────
   const handleCheckout = async () => {
     try {
@@ -281,9 +286,9 @@ export default function POSPage() {
 
       const payload = {
         donHang: {
-          maDonHang: 0, //Tự tăng
+          maDonHang: 0,
           maKhachHang: selectedCustomer ? Number(selectedCustomer.id) : 1,
-          maNguoiTao: 1,
+          maNguoiTao: session.user?.sub ? Number(session.user.sub) : 1,
           ngayTao: new Date().toISOString(),
           tongTien: total,
           trangThaiThanhToan: paidAmount >= total ? "da_thanh_toan" : "tra_mot_phan",
@@ -330,13 +335,13 @@ export default function POSPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-background">
 
       {/* ── Panel trái ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col border-r border-border min-w-0">
+      <div className="flex-1 flex flex-col border-r min-w-0">
 
         {/* Header */}
-        <header className="flex items-center justify-between gap-4 border-b border-border bg-card p-4 shrink-0">
+        <header className="flex items-center justify-between gap-4 border-b bg-card/95 backdrop-blur-sm p-4 shrink-0 shadow-sm">
           <Link
             to="/admin"
             className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
@@ -361,7 +366,7 @@ export default function POSPage() {
                 aria-expanded={hasSearchQuery}
                 aria-controls="pos-product-search-panel"
                 className={cn(
-                  "pl-11 h-12 text-lg bg-secondary border-0 relative z-10",
+                  "pl-11 h-12 text-lg bg-muted/50 border-muted focus:bg-background transition-colors relative z-10",
                   search && "pr-11"
                 )}
               />
@@ -371,7 +376,7 @@ export default function POSPage() {
               {search && !loadingData && (
                 <Button
                   variant="ghost" size="icon"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 z-10"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 z-10 rounded-lg hover:bg-muted"
                   onClick={() => setSearch("")}
                 >
                   <X className="h-4 w-4" />
@@ -383,46 +388,47 @@ export default function POSPage() {
                 <div
                   id="pos-product-search-panel"
                   role="listbox"
-                  className="absolute left-0 right-0 top-full mt-1 rounded-md border border-border bg-card shadow-lg overflow-hidden"
+                  className="absolute left-0 right-0 top-full mt-2 rounded-xl border bg-card shadow-lg overflow-hidden"
                 >
-                  <div className="max-h-[min(40vh,220px)] overflow-auto px-2 pb-2">
+                  <div className="max-h-[min(40vh,220px)] overflow-auto">
                     {filteredProducts.length === 0 ? (
                       <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
                         Không có sản phẩm phù hợp
                       </div>
                     ) : (
-                      <ul className="divide-y divide-border rounded-md border bg-background">
+                      <div className="divide-y">
                         {filteredProducts.map((product) => {
                           const isOutOfStock = product.stock === 0;
                           return (
-                            <li key={product.id} role="option">
-                              <button
-                                type="button"
-                                disabled={isOutOfStock}
-                                onClick={() => addToCartFromSearch(product)}
-                                className={cn(
-                                  "w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-secondary/80 transition-colors",
-                                  isOutOfStock && "opacity-50 cursor-not-allowed"
-                                )}
-                              >
-                                <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{product.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {product.sku} · {product.category}
-                                  </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <p className="font-semibold text-sm text-primary">
-                                    {fmt(product.price)}đ
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">/{product.unit}</p>
-                                </div>
-                              </button>
-                            </li>
+                            <button
+                              key={product.id}
+                              type="button"
+                              disabled={isOutOfStock}
+                              onClick={() => addToCartFromSearch(product)}
+                              className={cn(
+                                "w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-muted/50 transition-colors",
+                                isOutOfStock && "opacity-50 cursor-not-allowed"
+                              )}
+                            >
+                              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 shrink-0">
+                                <Package className="h-5 w-5 text-primary" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm truncate">{product.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {product.sku} · {product.category}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-bold text-sm text-primary">
+                                  {fmt(product.price)}đ
+                                </p>
+                                <p className="text-xs text-muted-foreground">/{product.unit}</p>
+                              </div>
+                            </button>
                           );
                         })}
-                      </ul>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -430,15 +436,15 @@ export default function POSPage() {
             </div>
           </div>
 
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2">
             <Button
               variant="outline"
-              className="h-12 gap-2 px-4"
+              className="h-10 gap-2 px-4 rounded-lg"
               disabled={cart.length === 0}
               onClick={handleOpenPrintPage}
             >
               <Printer className="h-4 w-4" />
-              In
+              <span className="hidden sm:inline">In</span>
             </Button>
           </div>
 
@@ -451,9 +457,9 @@ export default function POSPage() {
               </Button>
             ) : (
               <>
-                <span>F2: Tìm kiếm</span>
-                <span>|</span>
-                <span>F9: Thanh toán</span>
+                <span className="hidden md:inline">F2: Tìm kiếm</span>
+                <span className="hidden md:inline">|</span>
+                <span className="hidden md:inline">F9: Thanh toán</span>
               </>
             )}
           </div>
@@ -461,7 +467,7 @@ export default function POSPage() {
 
         {/* Thông báo lỗi fetch */}
         {fetchError && (
-          <div className="mx-4 mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <div className="m-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{fetchError}</span>
           </div>
@@ -469,157 +475,166 @@ export default function POSPage() {
 
         {/* Giỏ hàng */}
         <div className="flex-1 overflow-auto p-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-base flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-primary" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                <ShoppingCart className="h-4 w-4 text-primary" />
+              </div>
               Hàng đã chọn
               {cart.length > 0 && (
-                <span className="text-sm font-normal text-muted-foreground">
-                  ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
-                </span>
+                <Badge variant="secondary" className="ml-2">
+                  {cart.reduce((s, i) => s + i.quantity, 0)} SP
+                </Badge>
               )}
             </h2>
             {cart.length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearCart}
-                className="text-destructive hover:text-destructive">
-                <Trash2 className="h-4 w-4 mr-1" />
+                className="text-destructive hover:text-destructive gap-1">
+                <Trash2 className="h-4 w-4" />
                 Xóa tất cả
               </Button>
             )}
           </div>
 
           {loadingData && cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground gap-3">
+            <div className="flex flex-col items-center justify-center min-h-[300px] text-muted-foreground gap-3">
               <Loader2 className="h-10 w-10 animate-spin opacity-40" />
               <p className="text-sm">Đang tải dữ liệu...</p>
             </div>
           ) : cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[200px] text-muted-foreground">
-              <Package className="h-14 w-14 mb-3 opacity-60" />
-              <p className="text-sm">Chưa có hàng trên đơn</p>
+            <div className="flex flex-col items-center justify-center min-h-[300px] text-muted-foreground">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+                <Package className="h-8 w-8 opacity-40" />
+              </div>
+              <p className="text-sm mt-4 font-medium">Chưa có hàng trên đơn</p>
               <p className="text-xs mt-1">Tìm kiếm phía trên rồi chọn để thêm</p>
             </div>
           ) : (
-            <div className="rounded-md border bg-card overflow-x-auto">
-              <div
-                className="min-w-[720px] grid gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/40 items-center"
-                style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
-              >
-                <div>Sản phẩm</div>
-                <div>Giá vốn</div>
-                <div className="text-right">Giá bán</div>
-                <div className="text-center">Số lượng</div>
-                <div className="text-right">Thành tiền</div>
-                <div className="sr-only">Thao tác</div>
-              </div>
-
-              {cart.map((item) => (
-                <div
-                  key={item.id}
-                  className="min-w-[720px] grid gap-2 px-3 py-2.5 border-b border-border last:border-b-0 items-center hover:bg-muted/20"
-                  style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
-                >
-                  {/* Tên */}
-                  <div className="min-w-0 flex items-start gap-2">
-                    <div className="h-10 w-10 rounded-md bg-secondary flex items-center justify-center shrink-0">
-                      <Package className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
-                    </div>
+            <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <div className="min-w-[720px]">
+                  <div className="grid gap-3 px-4 py-3 text-xs font-medium text-muted-foreground border-b bg-muted/40 items-center"
+                    style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
+                  >
+                    <div>Sản phẩm</div>
+                    <div>Giá vốn</div>
+                    <div className="text-right">Giá bán</div>
+                    <div className="text-center">Số lượng</div>
+                    <div className="text-right">Thành tiền</div>
+                    <div className="sr-only">Thao tác</div>
                   </div>
 
-                  {/* Giá vốn */}
-                  <div className="text-sm text-muted-foreground">{fmt(item.cost ?? 0)}đ</div>
+                  {cart.map((item) => (
+                    <div
+                      key={item.id}
+                      className="grid gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center hover:bg-muted/30 transition-colors"
+                      style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
+                    >
+                      {/* Tên */}
+                      <div className="min-w-0 flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                          <Package className="h-5 w-5 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
+                        </div>
+                      </div>
 
-                  {/* Giá bán editable */}
-                  <div className="text-right">
-                    <Input
-                      className="h-9 text-right font-medium text-sm px-2"
-                      inputMode="numeric"
-                      value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
-                      onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, "");
-                        setLinePriceEdit((p) => p?.id === item.id ? { ...p, raw } : p);
-                      }}
-                      onBlur={() => {
-                        if (linePriceEdit?.id !== item.id) return;
-                        const price = Math.max(0, Number(linePriceEdit.raw) || 0);
-                        setCart((c) => c.map((i) => i.id === item.id ? { ...i, price } : i));
-                        setLinePriceEdit(null);
-                      }}
-                    />
-                  </div>
+                      {/* Giá vốn */}
+                      <div className="text-sm text-muted-foreground font-mono">{fmt(item.cost ?? 0)}đ</div>
 
-                  {/* Số lượng */}
-                  <div className="flex items-center gap-0.5 justify-center">
-                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => { setQtyEdit(null); updateQuantity(item.id, -1); }}
-                      aria-label="Giảm">
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                    <Input
-                      className="h-9 w-14 text-center font-medium text-sm px-1"
-                      inputMode="numeric"
-                      value={qtyEdit?.id === item.id ? qtyEdit.raw : String(item.quantity)}
-                      onFocus={() => setQtyEdit({ id: item.id, raw: String(item.quantity) })}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, "");
-                        setQtyEdit((p) => p?.id === item.id ? { ...p, raw } : p);
-                      }}
-                      onBlur={() => {
-                        if (qtyEdit?.id !== item.id) return;
-                        commitQuantity(item.id, qtyEdit.raw);
-                        setQtyEdit(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          if (qtyEdit?.id === item.id) {
+                      {/* Giá bán editable */}
+                      <div className="text-right">
+                        <Input
+                          className="h-9 text-right font-medium text-sm px-2 rounded-lg"
+                          inputMode="numeric"
+                          value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
+                          onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, "");
+                            setLinePriceEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                          }}
+                          onBlur={() => {
+                            if (linePriceEdit?.id !== item.id) return;
+                            const price = Math.max(0, Number(linePriceEdit.raw) || 0);
+                            setCart((c) => c.map((i) => i.id === item.id ? { ...i, price } : i));
+                            setLinePriceEdit(null);
+                          }}
+                        />
+                      </div>
+
+                      {/* Số lượng */}
+                      <div className="flex items-center gap-1 justify-center">
+                        <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
+                          onClick={() => { setQtyEdit(null); updateQuantity(item.id, -1); }}
+                          aria-label="Giảm">
+                          <Minus className="h-3.5 w-3.5" />
+                        </Button>
+                        <Input
+                          className="h-8 w-14 text-center font-medium text-sm px-1 rounded-lg"
+                          inputMode="numeric"
+                          value={qtyEdit?.id === item.id ? qtyEdit.raw : String(item.quantity)}
+                          onFocus={() => setQtyEdit({ id: item.id, raw: String(item.quantity) })}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, "");
+                            setQtyEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                          }}
+                          onBlur={() => {
+                            if (qtyEdit?.id !== item.id) return;
                             commitQuantity(item.id, qtyEdit.raw);
                             setQtyEdit(null);
-                          }
-                          e.currentTarget.blur();
-                        }
-                      }}
-                    />
-                    <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0"
-                      onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
-                      disabled={item.quantity >= item.stock}
-                      aria-label="Tăng">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (qtyEdit?.id === item.id) {
+                                commitQuantity(item.id, qtyEdit.raw);
+                                setQtyEdit(null);
+                              }
+                              e.currentTarget.blur();
+                            }
+                          }}
+                        />
+                        <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
+                          onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
+                          disabled={item.quantity >= item.stock}
+                          aria-label="Tăng">
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
 
-                  {/* Thành tiền */}
-                  <div className="text-right font-semibold text-sm text-primary tabular-nums">
-                    {fmt(item.price * item.quantity)}đ
-                  </div>
+                      {/* Thành tiền */}
+                      <div className="text-right font-bold text-sm text-primary font-mono">
+                        {fmt(item.price * item.quantity)}đ
+                      </div>
 
-                  {/* Xóa */}
-                  <div className="flex justify-end">
-                    <Button type="button" variant="ghost" size="icon"
-                      className="h-9 w-9 text-destructive hover:text-destructive shrink-0"
-                      onClick={() => removeFromCart(item.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      {/* Xóa */}
+                      <div className="flex justify-end">
+                        <Button type="button" variant="ghost" size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0 rounded-lg"
+                          onClick={() => removeFromCart(item.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           )}
         </div>
       </div>
 
       {/* ── Panel phải ─────────────────────────────────────────────────────── */}
-      <div className="w-[400px] flex flex-col bg-card border-l border-border shrink-0 relative z-50">
+      <div className="w-[400px] flex flex-col bg-card border-l shrink-0 relative shadow-lg">
 
         {/* Chọn khách hàng */}
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <UserCheck className="h-4 w-4 text-primary" />
-            <span className="font-medium text-sm">Khách hàng</span>
+        <div className="p-5 border-b">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+              <UserCheck className="h-4 w-4 text-primary" />
+            </div>
+            <span className="font-semibold text-sm">Khách hàng</span>
             {loadingData && (
               <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
             )}
@@ -628,7 +643,7 @@ export default function POSPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <Input
               ref={customerInputRef}
-              className="pl-9 pr-9"
+              className="pl-9 pr-9 rounded-lg"
               placeholder="Tìm tên hoặc SĐT..."
               value={customerQuery}
               disabled={loadingData}
@@ -641,19 +656,19 @@ export default function POSPage() {
             />
             {customerQuery && (
               <Button type="button" variant="ghost" size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 rounded-lg"
                 onClick={clearCustomerSelection}>
                 <X className="h-4 w-4" />
               </Button>
             )}
 
             {customerListOpen && filteredCustomers.length > 0 && (
-              <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md">
+              <ul className="absolute z-50 mt-2 w-full max-h-52 overflow-auto rounded-xl border bg-popover shadow-lg">
                 {filteredCustomers.map((c) => (
                   <li key={c.id}>
                     <button
                       type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground"
+                      className="w-full text-left px-4 py-3 hover:bg-accent transition-colors"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => selectCustomer(c)}
                     >
@@ -667,12 +682,12 @@ export default function POSPage() {
           </div>
 
           {selectedCustomer && (
-            <div className="mt-2 text-xs space-y-1 rounded-md border bg-secondary/30 p-2.5">
-              <p className="text-muted-foreground">SĐT: {selectedCustomer.phone}</p>
-              <p className="text-muted-foreground">ĐC: {selectedCustomer.address}</p>
+            <div className="mt-3 text-xs space-y-1 rounded-xl border bg-muted/30 p-3">
+              <p className="text-muted-foreground">📞 {selectedCustomer.phone}</p>
+              <p className="text-muted-foreground">📍 {selectedCustomer.address}</p>
               {selectedCustomer.hanMucNo > 0 && (
                 <p className="text-muted-foreground">
-                  Hạn mức nợ: {fmt(selectedCustomer.hanMucNo)}đ
+                  💰 Hạn mức nợ: {fmt(selectedCustomer.hanMucNo)}đ
                 </p>
               )}
             </div>
@@ -680,26 +695,26 @@ export default function POSPage() {
         </div>
 
         {/* Tạm tính */}
-        <div className="flex-1 overflow-auto p-4 flex flex-col justify-end min-h-0">
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
+        <div className="flex-1 overflow-auto p-5 flex flex-col justify-end min-h-0">
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between py-2">
               <span className="text-muted-foreground">
                 Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
               </span>
-              <span>{fmt(subtotal)}đ</span>
+              <span className="font-mono">{fmt(subtotal)}đ</span>
             </div>
-            <div className="flex justify-between text-lg font-bold border-t pt-2">
+            <div className="flex justify-between text-xl font-bold border-t pt-3">
               <span>Tổng cộng</span>
-              <span className="text-primary">{fmt(total)}đ</span>
+              <span className="text-primary font-mono">{fmt(total)}đ</span>
             </div>
           </div>
         </div>
 
         {/* Khách trả + nút thanh toán */}
-        <div className="border-t border-border p-4 space-y-4">
-          <div className="space-y-3 pt-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Khách trả:</span>
+        <div className="border-t p-5 space-y-4 bg-muted/10">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium text-muted-foreground whitespace-nowrap">Khách trả:</span>
               <Input
                 type="text"
                 inputMode="numeric"
@@ -708,30 +723,30 @@ export default function POSPage() {
                   const v = e.target.value.replace(/\D/g, "");
                   setAmountPaid(v ? fmt(Number(v)) : "");
                 }}
-                className="flex-1 text-right font-semibold h-10"
+                className="flex-1 text-right font-bold h-10 rounded-lg"
                 placeholder="0"
               />
             </div>
             {paidAmount > 0 && paidAmount < total && (
-              <div className="flex justify-between text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 p-2 rounded-md">
+              <div className="flex justify-between text-sm font-medium bg-amber-500/10 p-3 rounded-xl border border-amber-200">
                 <span className="flex items-center gap-1">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   Còn thiếu:
                 </span>
-                <span>{fmt(shortfall)}đ</span>
+                <span className="font-mono font-bold">{fmt(shortfall)}đ</span>
               </div>
             )}
             {paidAmount >= total && paidAmount > 0 && (
-              <div className="flex justify-between text-sm font-medium text-success bg-success/10 p-2 rounded-md">
+              <div className="flex justify-between text-sm font-medium bg-emerald-500/10 p-3 rounded-xl border border-emerald-200">
                 <span>Tiền thừa:</span>
-                <span>{fmt(change)}đ</span>
+                <span className="font-mono font-bold">{fmt(change)}đ</span>
               </div>
             )}
           </div>
 
           <Button
             size="lg"
-            className="w-full h-14 text-lg gap-2 bg-accent hover:bg-accent/90 text-accent-foreground"
+            className="w-full h-14 text-lg gap-2 bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground shadow-md rounded-xl"
             disabled={cart.length === 0}
             onClick={() => setCheckoutOpen(true)}
           >
@@ -749,9 +764,12 @@ export default function POSPage() {
           if (!submitting) setCheckoutOpen(o);
         }}
       >
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] rounded-xl">
           <DialogHeader>
-            <DialogTitle>Thanh toán</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" />
+              Thanh toán
+            </DialogTitle>
             <DialogDescription>
               Hoàn tất đơn hàng và chọn phương thức thanh toán
             </DialogDescription>
@@ -760,9 +778,11 @@ export default function POSPage() {
           {/* Màn hình thành công */}
           {checkoutSuccess ? (
             <div className="flex flex-col items-center gap-4 py-6">
-              <CheckCircle2 className="h-16 w-16 text-success" />
-              <div className="text-center space-y-1">
-                <p className="font-semibold text-lg">Đơn hàng đã ghi nhận!</p>
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+              </div>
+              <div className="text-center space-y-2">
+                <p className="font-bold text-xl">Đơn hàng đã ghi nhận!</p>
                 <p className="text-sm text-muted-foreground">
                   Tổng: {fmt(total)}đ · Khách trả: {fmt(paidAmount)}đ
                   {change > 0 && ` · Trả lại: ${fmt(change)}đ`}
@@ -773,7 +793,7 @@ export default function POSPage() {
                   </p>
                 )}
               </div>
-              <Button size="lg" className="mt-2 w-full" onClick={handleCloseSuccess}>
+              <Button size="lg" className="mt-2 w-full rounded-xl" onClick={handleCloseSuccess}>
                 Tạo đơn mới
               </Button>
             </div>
@@ -781,18 +801,18 @@ export default function POSPage() {
             <div className="space-y-6">
               {/* Khách hàng */}
               <div className="space-y-3">
-                <h3 className="font-medium flex items-center gap-2">
-                  <User className="h-4 w-4" />
+                <h3 className="font-semibold flex items-center gap-2">
+                  <User className="h-4 w-4 text-primary" />
                   Khách hàng
                 </h3>
                 {selectedCustomer ? (
-                  <div className="rounded-lg border p-3 bg-secondary/30">
+                  <div className="rounded-xl border bg-muted/30 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-medium truncate">{selectedCustomer.name}</p>
                         <p className="text-sm text-muted-foreground">{selectedCustomer.phone}</p>
                       </div>
-                      <Button variant="ghost" size="sm" onClick={clearCustomerSelection}>
+                      <Button variant="ghost" size="sm" onClick={clearCustomerSelection} className="rounded-lg">
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
@@ -803,26 +823,26 @@ export default function POSPage() {
               </div>
 
               {/* Tóm tắt đơn */}
-              <div className="rounded-lg border p-4 space-y-3">
+              <div className="rounded-xl border p-4 space-y-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">
                     Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
                   </span>
-                  <span>{fmt(subtotal)}đ</span>
+                  <span className="font-mono">{fmt(subtotal)}đ</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-3">
                   <span>Tổng cộng</span>
-                  <span className="text-primary">{fmt(total)}đ</span>
+                  <span className="text-primary font-mono">{fmt(total)}đ</span>
                 </div>
               </div>
 
               {/* Phương thức */}
               <div className="space-y-3">
-                <h3 className="font-medium">Phương thức thanh toán</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <h3 className="font-semibold">Phương thức thanh toán</h3>
+                <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant={paymentMethod === false ? "default" : "outline"}
-                    className="h-14 flex-col gap-1"
+                    className="h-14 flex-col gap-2 rounded-xl"
                     onClick={() => setPaymentMethod(false)}
                   >
                     <Banknote className="h-5 w-5" />
@@ -830,7 +850,7 @@ export default function POSPage() {
                   </Button>
                   <Button
                     variant={paymentMethod === true ? "default" : "outline"}
-                    className="h-14 flex-col gap-1"
+                    className="h-14 flex-col gap-2 rounded-xl"
                     onClick={() => setPaymentMethod(true)}
                   >
                     <CreditCard className="h-5 w-5" />
@@ -851,30 +871,30 @@ export default function POSPage() {
                       const v = e.target.value.replace(/\D/g, "");
                       setAmountPaid(v ? fmt(Number(v)) : "");
                     }}
-                    className="flex-1 text-right text-lg font-semibold"
+                    className="flex-1 text-right text-lg font-bold rounded-lg"
                     placeholder="0"
                   />
                 </div>
                 {paidAmount > 0 && paidAmount < total && (
-                  <div className="flex justify-between p-3 rounded-lg bg-amber-500/10 text-amber-800 dark:text-amber-300">
+                  <div className="flex justify-between p-3 rounded-xl bg-amber-500/10 border border-amber-200">
                     <span className="font-medium flex items-center gap-1">
                       <AlertCircle className="h-4 w-4 shrink-0" />
                       Còn thiếu:
                     </span>
-                    <span className="font-bold">{fmt(shortfall)}đ</span>
+                    <span className="font-bold font-mono">{fmt(shortfall)}đ</span>
                   </div>
                 )}
                 {paidAmount >= total && paidAmount > 0 && (
-                  <div className="flex justify-between p-3 rounded-lg bg-success/10 text-success">
+                  <div className="flex justify-between p-3 rounded-xl bg-emerald-500/10 border border-emerald-200">
                     <span className="font-medium">Tiền thừa:</span>
-                    <span className="font-bold">{fmt(change)}đ</span>
+                    <span className="font-bold font-mono">{fmt(change)}đ</span>
                   </div>
                 )}
               </div>
 
               {/* Lỗi gửi đơn */}
               {submitError && (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>{submitError}</span>
                 </div>
@@ -882,7 +902,7 @@ export default function POSPage() {
 
               <Button
                 size="lg"
-                className="w-full h-14 text-lg bg-accent hover:bg-accent/90 text-accent-foreground gap-2"
+                className="w-full h-14 text-lg bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground gap-2 rounded-xl shadow-md"
                 onClick={handleCheckout}
                 disabled={submitting || cart.length === 0}
               >

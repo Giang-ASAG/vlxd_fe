@@ -52,6 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Search,
   Plus,
@@ -64,6 +65,9 @@ import {
   DollarSign,
   Warehouse,
   Trash2,
+  ChevronDown,
+  ChevronUp,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -75,6 +79,7 @@ import {
 import { usePagination } from "@/src/hooks/use-pagination";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
+import { getSession } from "@/src/auth/session";
 
 // ── Form / Select (Radix Select: value phải khớp đúng một SelectItem) ───────
 
@@ -217,11 +222,11 @@ function resolveSupplierSelectValue(product, suppliers) {
 const statusConfig = {
   active: {
     label: "Còn hàng",
-    className: "bg-success/10 text-success border-success/20",
+    className: "bg-emerald-100 text-emerald-700 border-emerald-200",
   },
   low_stock: {
     label: "Sắp hết",
-    className: "bg-warning/10 text-warning-foreground border-warning/20",
+    className: "bg-amber-100 text-amber-700 border-amber-200",
   },
   out_of_stock: {
     label: "Hết hàng",
@@ -408,7 +413,7 @@ function ProductPurchaseHistoryTab({
   const history = getProductPurchaseHistory(purchaseOrders, product.id);
 
   return (
-    <div className="space-y-4 rounded-lg border bg-card p-4">
+    <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold text-foreground">
@@ -418,7 +423,7 @@ function ProductPurchaseHistoryTab({
             Theo dõi các phiếu nhập có chứa sản phẩm này.
           </p>
         </div>
-        <Badge variant="outline" className="text-xs">
+        <Badge variant="secondary" className="text-xs">
           {history.length} dòng nhập
         </Badge>
       </div>
@@ -431,7 +436,7 @@ function ProductPurchaseHistoryTab({
         <div className="overflow-hidden rounded-lg border">
           <Table>
             <TableHeader>
-              <TableRow>
+              <TableRow className="bg-muted/40 hover:bg-muted/40">
                 <TableHead>Mã phiếu</TableHead>
                 <TableHead>Ngày nhập</TableHead>
                 <TableHead>Nhà cung cấp</TableHead>
@@ -458,11 +463,12 @@ function ProductPurchaseHistoryTab({
                 return (
                   <TableRow
                     key={`${order.maPhieuNhap ?? "pn"}-${getLineProductId(line) ?? product.id}-${index}`}
+                    className="text-sm hover:bg-muted/30"
                   >
                     <TableCell className="font-medium">
                       PN{String(order.maPhieuNhap ?? "").padStart(4, "0")}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-muted-foreground">
                       {order.ngayNhap
                         ? new Date(order.ngayNhap).toLocaleDateString("vi-VN")
                         : "--"}
@@ -476,20 +482,20 @@ function ProductPurchaseHistoryTab({
                     <TableCell className="text-right tabular-nums">
                       {quantity.toLocaleString("vi-VN")} {product.unit}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right tabular-nums">
                       {formatPrice(unitPrice)}
                     </TableCell>
-                    <TableCell className="text-right font-semibold">
+                    <TableCell className="text-right font-semibold tabular-nums">
                       {formatPrice(lineTotal)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
                       {formatPrice(order.daThanhToanNcc ?? 0)}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {String(loainhap ?? "")}
-                    </TableCell>
+                    <TableCell className="text-right">{loainhap}</TableCell>
                     <TableCell>
-                      {formatPurchaseStatus(order.trangThai)}
+                      <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs">
+                        {formatPurchaseStatus(order.trangThai)}
+                      </span>
                     </TableCell>
                   </TableRow>
                 );
@@ -612,25 +618,17 @@ export function ProductForm({
     e.preventDefault();
     const isEdit = Boolean(product);
 
-    const stockCurrent = Number(product?.stock ?? form.stock ?? 0) || 0;
     const stockAdd = Number(form.stockAdd ?? 0) || 0;
     const stockFinal = isEdit
-      ? stockCurrent + stockAdd
+      ? (Number(product?.stock ?? 0) || 0) + stockAdd
       : Number(form.stock) || 0;
 
-    const tonKhoCurrent =
-      Number(
-        product?.tonKhoHienTai ?? product?.stock ?? form.tonKhoHienTai ?? 0
-      ) || 0;
     const tonKhoAdd = Number(form.tonKhoHienTaiAdd ?? 0) || 0;
     const tonKhoFinal = isEdit
-      ? tonKhoCurrent + tonKhoAdd
+      ? (Number(product?.tonKhoHienTai ?? product?.stock ?? 0) || 0) + tonKhoAdd
       : Number(form.tonKhoHienTai) || 0;
 
-    const unitStr = trimUnit(form.unit) || DEFAULT_UNIT;
-
     onSave({
-      ...form,
       name: form.name.trim(),
       sku: form.sku.trim(),
       price: priceAfterTax,
@@ -644,14 +642,8 @@ export function ProductForm({
       tonKhoToiThieu: Number(form.tonKhoToiThieu) || 0,
       tonKhoToiDa: Number(form.tonKhoToiDa) || 999999999,
       maDanhMuc: form.maDanhMuc ? Number(form.maDanhMuc) : null,
-      maThuongHieu: form.maThuongHieu ? Number(form.maThuongHieu) : null,
       maNccMacDinh: form.maNccMacDinh ? Number(form.maNccMacDinh) : null,
-      unit: unitStr,
-      donViChinh: unitStr,
-      giaNhapGanNhat: Number(form.cost) || 0,
-      giaBanLe: Number(form.priceBeforeTax) || 0,
-      thue: Number(form.vat) || 0,
-      giaSauThue: priceAfterTax,
+      unit: trimUnit(form.unit) || DEFAULT_UNIT,
       ngayTao: product?.ngayTao ?? new Date().toISOString(),
     });
   };
@@ -681,10 +673,10 @@ export function ProductForm({
         <Accordion
           type="multiple"
           defaultValue={["item-1", "item-2", "item-3"]}
-          className="mb-6"
+          className="mb-6 space-y-4"
         >
-          <AccordionItem value="item-1" className="border-none mb-4">
-            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-2 rounded-t-lg border-b">
+          <AccordionItem value="item-1" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Package className="h-4 w-4 text-primary" />
                 <span className="font-semibold text-foreground">
@@ -692,7 +684,7 @@ export function ProductForm({
                 </span>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="p-4 bg-card border border-t-0 rounded-b-lg space-y-4">
+            <AccordionContent className="p-4 bg-card border-t space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5 md:col-span-2">
                   <Label className="text-sm font-medium">Tên hàng hóa *</Label>
@@ -824,8 +816,8 @@ export function ProductForm({
             </AccordionContent>
           </AccordionItem>
 
-          <AccordionItem value="item-2" className="border-none mb-4">
-            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-2 rounded-t-lg border-b">
+          <AccordionItem value="item-2" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-primary" />
                 <span className="font-semibold text-foreground">
@@ -833,7 +825,7 @@ export function ProductForm({
                 </span>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="p-4 bg-card border border-t-0 rounded-b-lg">
+            <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Giá vốn (đ)</Label>
@@ -841,7 +833,7 @@ export function ProductForm({
                     type="number"
                     value={form.cost}
                     onChange={set("cost")}
-                    className="h-10 border-blue-100 bg-blue-50/30"
+                    className="h-10"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -897,8 +889,8 @@ export function ProductForm({
             </AccordionContent>
           </AccordionItem>
 
-          <AccordionItem value="item-3" className="border-none mb-4">
-            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-2 rounded-t-lg border-b">
+          <AccordionItem value="item-3" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Warehouse className="h-4 w-4 text-primary" />
                 <span className="font-semibold text-foreground">
@@ -906,7 +898,7 @@ export function ProductForm({
                 </span>
               </div>
             </AccordionTrigger>
-            <AccordionContent className="p-4 bg-card border border-t-0 rounded-b-lg">
+            <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">
@@ -918,7 +910,7 @@ export function ProductForm({
                     onChange={set("stock")}
                     className={cn(
                       "h-10",
-                      product && "bg-gray-100 text-gray-600 cursor-not-allowed"
+                      product && "bg-muted/60 text-muted-foreground cursor-not-allowed"
                     )}
                     readOnly={!!product}
                     disabled={!!product}
@@ -934,7 +926,7 @@ export function ProductForm({
                     onChange={set("tonKhoHienTai")}
                     className={cn(
                       "h-10",
-                      product && "bg-gray-100 text-gray-600 cursor-not-allowed"
+                      product && "bg-muted/60 text-muted-foreground cursor-not-allowed"
                     )}
                     readOnly={!!product}
                     disabled={!!product}
@@ -1073,10 +1065,10 @@ export function ProductModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto p-0 gap-0 border-none shadow-2xl rounded-xl"
+        className="max-h-[90vh] overflow-y-auto p-0 gap-0 border-0 shadow-2xl rounded-xl"
         style={{ maxWidth: "1024px", width: "95vw" }}
       >
-        <DialogHeader className="p-6 bg-primary text-primary-foreground shrink-0">
+        <DialogHeader className="p-6 bg-primary text-primary-foreground rounded-t-xl shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-white/20 rounded-lg">
               <Package className="h-6 w-6" />
@@ -1212,10 +1204,11 @@ export function ProductTable() {
   const handleSaveProduct = async (formData, isEdit = false) => {
     try {
       setSaving(true);
-
+      const session = getSession();
       const payload = {
         maSku: formData.sku || null,
         tenSanPham: formData.name,
+        maNguoiLap: session.user?.sub ? Number(session.user?.sub) : 1,
         maDanhMuc: (() => {
           const n = Number(formData.maDanhMuc);
           return Number.isFinite(n) &&
@@ -1269,7 +1262,7 @@ export function ProductTable() {
             tonKhoNhap,
             donGiaNhap: Number(formData.cost) || 0,
             maKho: 1,
-            maNguoiDung: 1,
+            maNguoiDung: session.user?.sub ? Number(session.user?.sub) : 1,
             soTienThanhToanNgay: 0,
           });
         } else {
@@ -1302,10 +1295,64 @@ export function ProductTable() {
     }
   };
 
+  // Summary stats
+  const totalProducts = products.length;
+  const lowStockCount = products.filter(p => p.status === "low_stock").length;
+  const outOfStockCount = products.filter(p => p.status === "out_of_stock").length;
+
+  if (loading) return (
+    <div className="flex h-96 items-center justify-center gap-3 text-muted-foreground">
+      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <span>Đang tải dữ liệu sản phẩm...</span>
+    </div>
+  );
+
+  if (fetchError) return (
+    <div className="flex h-96 flex-col items-center justify-center gap-4">
+      <div className="flex items-center gap-2 text-destructive">
+        <AlertCircle className="h-5 w-5" />
+        <p className="font-medium">{fetchError}</p>
+      </div>
+      <Button variant="outline" onClick={loadData}>Thử lại</Button>
+    </div>
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <Button onClick={handleAddProduct} className="gap-2" disabled={loading}>
+          <Plus className="h-4 w-4" />
+          Thêm sản phẩm
+        </Button>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {[
+          { icon: Package, label: "Tổng sản phẩm", value: totalProducts, bg: "bg-primary/10", color: "text-primary" },
+          { icon: AlertCircle, label: "Sắp hết hàng", value: lowStockCount, bg: "bg-amber-100", color: "text-amber-700" },
+          { icon: Warehouse, label: "Hết hàng", value: outOfStockCount, bg: "bg-destructive/10", color: "text-destructive" },
+        ].map(({ icon: Icon, label, value, bg, color }) => (
+          <Card key={label} className="border-0 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl", bg)}>
+                  <Icon className={cn("h-5 w-5", color)} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{label}</p>
+                  <p className="text-2xl font-bold">{value}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Toolbar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Tìm sản phẩm hoặc SKU..."
@@ -1329,20 +1376,10 @@ export function ProductTable() {
               <RefreshCw className="h-4 w-4" />
             )}
           </Button>
-          <Button onClick={handleAddProduct} className="gap-2" disabled={loading}>
-            <Plus className="h-4 w-4" />
-            Thêm sản phẩm
-          </Button>
         </div>
       </div>
 
-      {fetchError && (
-        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{fetchError}</span>
-        </div>
-      )}
-
+      {/* Category Filters */}
       <div className="flex flex-wrap gap-2">
         {categories.map((cat) => (
           <Button
@@ -1358,37 +1395,29 @@ export function ProductTable() {
         ))}
       </div>
 
-      <div className="rounded-lg border bg-card overflow-hidden">
+      {/* Table */}
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead className="w-[300px]">Sản phẩm</TableHead>
               <TableHead>Mã SKU</TableHead>
               <TableHead>Danh mục</TableHead>
               <TableHead className="text-right">Giá nhập</TableHead>
               <TableHead className="text-right">Giá bán</TableHead>
               <TableHead className="text-right">Số lượng</TableHead>
-              <TableHead className="text-right">Tồn kho hiện tại</TableHead>
+              <TableHead className="text-right">Tồn kho</TableHead>
               <TableHead>Trạng thái</TableHead>
+              <TableHead className="w-8" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: 8 }).map((_, j) => (
-                    <TableCell key={j}>
-                      <div className="h-4 rounded bg-muted animate-pulse" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : paginatedItems.length === 0 ? (
+            {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center">
+                <TableCell colSpan={9} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <Package className="h-8 w-8" />
-                    <p>Không tìm thấy sản phẩm</p>
+                    <Package className="h-8 w-8 opacity-40" />
+                    <p className="text-sm">Không tìm thấy sản phẩm</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -1401,7 +1430,7 @@ export function ProductTable() {
                     <TableRow
                       className={cn(
                         "cursor-pointer transition-colors",
-                        isExpanded ? "bg-muted/30" : "hover:bg-muted/50"
+                        isExpanded ? "bg-primary/5 hover:bg-primary/5" : "hover:bg-muted/40"
                       )}
                       onClick={() => handleToggleRow(product.id)}
                     >
@@ -1409,86 +1438,81 @@ export function ProductTable() {
                         {product.name}
                       </TableCell>
                       <TableCell className="text-muted-foreground font-mono text-xs">
-                        {product.sku}
+                        {product.sku || "--"}
                       </TableCell>
                       <TableCell>{product.category}</TableCell>
-                      <TableCell className="text-right text-muted-foreground">
+                      <TableCell className="text-right text-muted-foreground tabular-nums">
                         {formatPrice(product.cost)}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right font-medium tabular-nums">
                         {formatPrice(product.price)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {product.stock.toLocaleString("vi-VN")} {product.unit}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {product.tonKhoHienTai.toLocaleString("vi-VN")}{" "}
-                        {product.unit}
+                        {product.tonKhoHienTai.toLocaleString("vi-VN")} {product.unit}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn("text-xs", status.className)}
-                        >
+                        <span className={cn(
+                          "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                          status.className
+                        )}>
                           {status.label}
-                        </Badge>
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {isExpanded
+                          ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
                     </TableRow>
 
                     {isExpanded && (
-                      <TableRow className="bg-muted/20 border-b-2 border-primary/20">
-                        <TableCell colSpan={8} className="p-0">
-                          <div className="animate-in slide-in-from-top-1 duration-200">
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={9} className="p-0">
+                          <div className="border-t bg-muted/10 px-6 py-5">
                             <Tabs
                               key={product.id}
                               defaultValue="product-info"
-                              className="border-x shadow-inner"
+                              onValueChange={(val) => {
+                                // No need to fetch additional data
+                              }}
                             >
-                              <div className="border-b bg-background px-4 pt-4">
-                                <TabsList className="grid h-auto w-full grid-cols-2 sm:w-fit">
-                                  <TabsTrigger
-                                    value="product-info"
-                                    className="gap-2 px-4 py-2"
-                                  >
-                                    <Info className="h-4 w-4" />
-                                    Thông tin sản phẩm
-                                  </TabsTrigger>
-                                  <TabsTrigger
-                                    value="purchase-history"
-                                    className="gap-2 px-4 py-2"
-                                  >
-                                    <History className="h-4 w-4" />
-                                    Lịch sử nhập hàng
-                                  </TabsTrigger>
-                                </TabsList>
-                              </div>
+                              <TabsList className="h-9 rounded-lg bg-muted/60 p-1">
+                                <TabsTrigger value="product-info" className="gap-1.5 rounded-md px-4 text-xs">
+                                  <Info className="h-3.5 w-3.5" /> Thông tin
+                                </TabsTrigger>
+                                <TabsTrigger value="purchase-history" className="gap-1.5 rounded-md px-4 text-xs">
+                                  <History className="h-3.5 w-3.5" /> Lịch sử nhập
+                                </TabsTrigger>
+                              </TabsList>
 
-                              <TabsContent value="product-info" className="mt-0">
-                                <div className="space-y-4 p-4">
-                                  <ProductForm
-                                    key={product.id}
-                                    product={product}
-                                    danhMucs={danhMucs}
-                                    setDanhMucs={setDanhMucs}
-                                    suppliers={suppliers}
-                                    onSave={(data) =>
-                                      handleSaveProduct(
-                                        { ...data, id: product.id },
-                                        true
-                                      )
-                                    }
-                                    onCancel={() => setExpandedRowId(null)}
-                                    onDelete={(p) => setDeleteTarget(p)}
-                                    saving={saving}
-                                    compact
-                                  />
-                                </div>
+                              <TabsContent value="product-info" className="mt-4">
+                                <Card className="overflow-hidden shadow-sm">
+                                  <CardContent className="p-5">
+                                    <ProductForm
+                                      key={product.id}
+                                      product={product}
+                                      danhMucs={danhMucs}
+                                      setDanhMucs={setDanhMucs}
+                                      suppliers={suppliers}
+                                      onSave={(data) =>
+                                        handleSaveProduct(
+                                          { ...data, id: product.id },
+                                          true
+                                        )
+                                      }
+                                      onCancel={() => setExpandedRowId(null)}
+                                      onDelete={(p) => setDeleteTarget(p)}
+                                      saving={saving}
+                                      compact
+                                    />
+                                  </CardContent>
+                                </Card>
                               </TabsContent>
 
-                              <TabsContent
-                                value="purchase-history"
-                                className="mt-0 p-4"
-                              >
+                              <TabsContent value="purchase-history" className="mt-4">
                                 <ProductPurchaseHistoryTab
                                   product={product}
                                   suppliers={suppliers}
@@ -1510,12 +1534,11 @@ export function ProductTable() {
         </Table>
       </div>
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-2">
+      {/* Pagination */}
+      <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
         {!loading && !fetchError && (
-          <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>Hiển thị</span>
-            <PageSizeSelect pageSize={pageSize} onChange={setPageSize} />
-            <span>/ {totalItems} sản phẩm</span>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            Hiển thị <PageSizeSelect pageSize={pageSize} onChange={setPageSize} /> / {totalItems} sản phẩm
           </p>
         )}
         <PaginationWrapper
@@ -1525,6 +1548,7 @@ export function ProductTable() {
         />
       </div>
 
+      {/* Modals */}
       <ProductModal
         open={modalOpen}
         onOpenChange={setModalOpen}

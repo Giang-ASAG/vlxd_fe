@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, addMonths, endOfMonth, endOfQuarter, endOfYear, format, isAfter, isBefore, startOfDay, endOfDay, startOfMonth, startOfQuarter, startOfYear } from "date-fns";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Download, RefreshCw, Search } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronDown, ChevronRight, Download, RefreshCw, Search, TrendingUp, DollarSign, Calendar as CalendarIcon2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -317,7 +317,6 @@ export default function FinancialReportPage() {
       ws.getCell("A3").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
       ws.getRow(4).height = 6;
 
-      // Apply alignment across merged title rows (Excel can ignore single-cell alignment on merges)
       const titleAlignment = { horizontal: "center", vertical: "middle", wrapText: true };
       for (let r = 1; r <= 3; r += 1) {
         for (let c = 1; c <= totalCols; c += 1) {
@@ -345,18 +344,16 @@ export default function FinancialReportPage() {
         ws.getColumn(c).width = 16;
         ws.getColumn(c).numFmt = numberFormat;
       }
-      const startRow = 6; // data bắt đầu sau header table
+      const startRow = 6;
       const endRow = ws.rowCount;
       
       for (let r = startRow; r <= endRow; r++) {
-        // cột 1: text
         ws.getCell(r, 1).alignment = {
           horizontal: "left",
           vertical: "middle",
           wrapText: true,
         };
       
-        // cột số
         for (let c = 2; c <= totalCols; c++) {
           ws.getCell(r, c).alignment = {
             horizontal: "right",
@@ -431,69 +428,130 @@ export default function FinancialReportPage() {
     );
   };
 
-  return (
-    <div className="space-y-4 pb-8">
-      <Card>
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <CardTitle className="text-2xl">Báo cáo tài chính</CardTitle>
-              <p className="text-sm text-muted-foreground">{rangeSummary}</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="gap-2">
-                    <CalendarIcon className="h-4 w-4" />
-                    {rangeSummary}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-auto p-2">
-                  <Calendar mode="range" selected={range} onSelect={onRangeSelect} numberOfMonths={2} disabled={{ after: today }} />
-                </PopoverContent>
-              </Popover>
-              <Button variant="outline" size="sm" onClick={() => setPreset("today")}>Hôm nay</Button>
-              <Button variant="outline" size="sm" onClick={() => setPreset("month")}>Tháng này</Button>
-              <Button variant="outline" size="sm" onClick={() => setPreset("quarter")}>Quý này</Button>
-              <Button variant="outline" size="sm" onClick={() => setPreset("year")}>Năm nay</Button>
-            </div>
-          </div>
+  // Tính toán tổng doanh thu và lợi nhuận cho cards thống kê
+  const revenueRow = data.rows.find(r => r.id === "revenue");
+  const profitRow = data.rows.find(r => r.id === "profit");
+  const totalRevenue = revenueRow?.values?.[data.columns[data.columns.length - 1]?.key] ?? 0;
+  const totalProfit = profitRow?.values?.[data.columns[data.columns.length - 1]?.key] ?? 0;
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full min-w-[240px] flex-1 lg:max-w-sm">
+  return (
+    <div className="space-y-6 pb-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Báo cáo tài chính</h1>
+          <p className="text-sm text-muted-foreground">Phân tích kết quả kinh doanh theo từng kỳ</p>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {[
+          { icon: TrendingUp, label: "Tổng doanh thu", value: numberFormatter.format(totalRevenue), bg: "bg-primary/10", color: "text-primary" },
+          { icon: DollarSign, label: "Tổng lợi nhuận", value: numberFormatter.format(totalProfit), bg: totalProfit >= 0 ? "bg-emerald-100" : "bg-destructive/10", color: totalProfit >= 0 ? "text-emerald-700" : "text-destructive" },
+          { icon: CalendarIcon2, label: "Kỳ báo cáo", value: rangeSummary, bg: "bg-muted", color: "text-muted-foreground" },
+        ].map(({ icon: Icon, label, value, bg, color }) => (
+          <Card key={label} className="border-0 shadow-sm">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4">
+                <div className={cn("flex h-11 w-11 items-center justify-center rounded-xl", bg)}>
+                  <Icon className={cn("h-5 w-5", color)} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{label}</p>
+                  <p className="text-2xl font-bold truncate">{value}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Filters Card */}
+      <Card className="border shadow-sm overflow-hidden">
+        <CardContent className="p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm kiếm dòng..." className="pl-9" />
+              <Input 
+                value={search} 
+                onChange={(e) => setSearch(e.target.value)} 
+                placeholder="Tìm kiếm chỉ tiêu..." 
+                className="pl-9 h-10" 
+              />
             </div>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="gap-2 h-10">
+                  <CalendarIcon className="h-4 w-4" />
+                  {rangeSummary}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-2">
+                <Calendar 
+                  mode="range" 
+                  selected={range} 
+                  onSelect={onRangeSelect} 
+                  numberOfMonths={2} 
+                  disabled={{ after: today }} 
+                />
+              </PopoverContent>
+            </Popover>
+
+            <div className="flex gap-1">
+              <Button variant="outline" size="sm" onClick={() => setPreset("today")} className="h-10">Hôm nay</Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("month")} className="h-10">Tháng này</Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("quarter")} className="h-10">Quý này</Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("year")} className="h-10">Năm nay</Button>
+            </div>
+
             <Select value={groupBy} onValueChange={setGroupBy}>
-              <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[130px] h-10">
+                <SelectValue placeholder="Nhóm theo" />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">Ngày</SelectItem>
-                <SelectItem value="month">Tháng</SelectItem>
-                <SelectItem value="quarter">Quý</SelectItem>
-                <SelectItem value="year">Năm</SelectItem>
+                <SelectItem value="day">Theo ngày</SelectItem>
+                <SelectItem value="month">Theo tháng</SelectItem>
+                <SelectItem value="quarter">Theo quý</SelectItem>
+                <SelectItem value="year">Theo năm</SelectItem>
               </SelectContent>
             </Select>
+
             <Select value={currency} onValueChange={setCurrency}>
-              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[110px] h-10">
+                <SelectValue placeholder="Tiền tệ" />
+              </SelectTrigger>
               <SelectContent>
                 {CURRENCY_OPTIONS.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={() => setRefreshTick((v) => v + 1)} className="gap-2"><RefreshCw className="h-4 w-4" />Làm mới</Button>
-            <Button onClick={exportExcel} className="gap-2"><Download className="h-4 w-4" />Xuất .xlsx</Button>
-          </div>
-        </CardHeader>
 
-        <CardContent>
+            <Button variant="outline" onClick={() => setRefreshTick((v) => v + 1)} className="gap-2 h-10">
+              <RefreshCw className="h-4 w-4" />
+              Làm mới
+            </Button>
+
+            <Button onClick={exportExcel} className="gap-2 h-10 ml-auto">
+              <Download className="h-4 w-4" />
+              Xuất Excel
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Table Card */}
+      <Card className="border shadow-sm overflow-hidden">
+        <CardContent className="p-0">
           <div
             ref={tableContainerRef}
             onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
-            className="max-h-[560px] overflow-auto rounded-md border"
+            className="max-h-[560px] overflow-auto"
           >
             <table className="w-max min-w-full border-collapse">
-              <thead className="sticky top-0 z-20 bg-muted">
-                <tr>
-                  <th className="sticky left-0 z-30 min-w-[320px] border-b border-r bg-muted px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">
+              <thead className="sticky top-0 z-20 bg-muted/95 backdrop-blur-sm">
+                <tr className="border-b">
+                  <th className="sticky left-0 z-30 min-w-[320px] border-r bg-muted/95 px-4 py-3 text-left text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     Chỉ tiêu
                   </th>
                   {data.columns.map((col) => (
@@ -501,12 +559,16 @@ export default function FinancialReportPage() {
                       key={col.key}
                       onClick={() => handleSort(col.key)}
                       className={cn(
-                        "min-w-[140px] cursor-pointer border-b border-r bg-muted px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide",
-                        hovered.col === col.key && "ring-1 ring-inset ring-primary/25"
+                        "min-w-[140px] cursor-pointer border-r px-4 py-3 text-right text-sm font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/80",
+                        hovered.col === col.key && "bg-primary/5"
                       )}
                     >
-                      <span>{col.label}</span>
-                      {sortState.key === col.key ? ` ${sortState.dir === "desc" ? "↓" : "↑"}` : ""}
+                      <div className="flex items-center justify-end gap-1">
+                        <span>{col.label}</span>
+                        {sortState.key === col.key && (
+                          <span className="text-xs">{sortState.dir === "desc" ? "↓" : "↑"}</span>
+                        )}
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -518,39 +580,60 @@ export default function FinancialReportPage() {
                   </tr>
                 )}
                 {loading ? (
-                  <tr><td colSpan={data.columns.length + 1} className="p-6 text-center text-muted-foreground">Đang tải báo cáo...</td></tr>
+                  <tr>
+                    <td colSpan={data.columns.length + 1} className="p-12 text-center">
+                      <div className="flex items-center justify-center gap-3 text-muted-foreground">
+                        <RefreshCw className="h-5 w-5 animate-spin" />
+                        <span>Đang tải báo cáo...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : visibleRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={data.columns.length + 1} className="p-12 text-center text-muted-foreground">
+                      Không có dữ liệu báo cáo
+                    </td>
+                  </tr>
                 ) : (
                   visibleRows.map((row, idx) => {
                     const rowKey = `${row.id}-${idx}`;
+                    const isEven = (startIndex + idx) % 2 === 0;
                     return (
                       <tr
                         key={rowKey}
                         style={{ height: ROW_HEIGHT }}
                         onMouseEnter={() => setHovered((h) => ({ ...h, row: row.id }))}
                         onMouseLeave={() => setHovered((h) => ({ ...h, row: h.row === row.id ? "" : h.row }))}
-                        className={cn("border-b", (startIndex + idx) % 2 === 0 ? "bg-muted" : "bg-background")}
+                        className={cn(
+                          "border-b transition-colors",
+                          isEven ? "bg-background" : "bg-muted/30",
+                          hovered.row === row.id && "bg-primary/5"
+                        )}
                       >
                         <td
                           className={cn(
-                            "sticky left-0 z-10 border-r px-3 py-2",
-                            row.total ? "font-semibold" : "font-normal",
-                            hovered.row === row.id && "ring-1 ring-inset ring-primary/25",
-                            (startIndex + idx) % 2 === 0 ? "bg-muted" : "bg-background"
+                            "sticky left-0 z-10 border-r px-4 py-2",
+                            row.total && "font-semibold bg-inherit",
+                            hovered.row === row.id && "ring-1 ring-inset ring-primary/20"
                           )}
+                          style={{ backgroundColor: isEven ? "var(--background)" : "var(--muted)" }}
                         >
-                          <div className="flex items-center gap-2" style={{ paddingLeft: row.level * 14 }}>
+                          <div className="flex items-center gap-2" style={{ paddingLeft: (row.level || 0) * 16 }}>
                             {row.children ? (
                               <button
                                 type="button"
                                 onClick={() => setExpanded((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
-                                className="rounded p-0.5 hover:bg-muted"
+                                className="rounded p-0.5 hover:bg-muted transition-colors"
                               >
-                                {expanded[row.id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                {expanded[row.id] ? 
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" /> : 
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                }
                               </button>
                             ) : (
                               <span className="h-4 w-4" />
                             )}
-                            <span>{row.name}</span>
+                            <span className={cn(row.total && "font-bold")}>{row.name}</span>
                           </div>
                         </td>
                         {data.columns.map((col) => {
@@ -561,10 +644,10 @@ export default function FinancialReportPage() {
                               onMouseEnter={() => setHovered((h) => ({ ...h, col: col.key }))}
                               onMouseLeave={() => setHovered((h) => ({ ...h, col: "" }))}
                               className={cn(
-                                "border-r px-3 py-2 text-right tabular-nums",
+                                "border-r px-4 py-2 text-right font-mono tabular-nums transition-colors",
                                 value < 0 ? "text-red-600" : "text-foreground",
                                 row.total && "font-semibold",
-                                (hovered.col === col.key || hovered.row === row.id) && "ring-1 ring-inset ring-primary/20"
+                                (hovered.col === col.key || hovered.row === row.id) && "bg-primary/5"
                               )}
                             >
                               {numberFormatter.format(value)}
@@ -583,9 +666,11 @@ export default function FinancialReportPage() {
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Dữ liệu tự tải lại khi bộ lọc thời gian thay đổi (debounce + cache). Nhấn vào tiêu đề kỳ để sắp xếp.
-          </p>
+          <div className="border-t px-4 py-3 bg-muted/20">
+            <p className="text-xs text-muted-foreground">
+              💡 Dữ liệu tự động cập nhật khi thay đổi bộ lọc. Nhấp vào tiêu đề cột để sắp xếp theo kỳ báo cáo.
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

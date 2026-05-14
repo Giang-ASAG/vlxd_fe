@@ -8,6 +8,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 export function PaginationWrapper({
   currentPage,
@@ -53,6 +54,10 @@ export function PaginationWrapper({
             e.preventDefault();
             onPageChange(page);
           }}
+          className={cn(
+            "rounded-lg transition-colors",
+            currentPage === page && "bg-primary text-primary-foreground hover:bg-primary/90"
+          )}
         >
           {page}
         </PaginationLink>
@@ -61,20 +66,20 @@ export function PaginationWrapper({
   };
 
   return (
-    <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
       {showPageSize && (
         <div className="flex items-center gap-2">
           {pageSizeLabel ? (
             <span className="text-sm text-muted-foreground">{pageSizeLabel}</span>
           ) : null}
           <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
-            <SelectTrigger className="h-9 w-fit">
-              <SelectValue />
+            <SelectTrigger className="h-9 w-[90px] rounded-lg border-muted bg-muted/30 hover:bg-muted/50 transition-colors">
+              <SelectValue placeholder="10" />
             </SelectTrigger>
             <SelectContent>
               {pageSizeOptions.map((opt) => (
-                <SelectItem key={opt} value={String(opt)}>
-                  {opt}
+                <SelectItem key={opt} value={String(opt)} className="cursor-pointer">
+                  {opt} / trang
                 </SelectItem>
               ))}
             </SelectContent>
@@ -84,36 +89,42 @@ export function PaginationWrapper({
 
       {!showPager ? null : (
         <Pagination className="mt-0">
-          <PaginationContent>
-        <PaginationItem>
-          <PaginationPrevious
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              if (currentPage > 1) onPageChange(currentPage - 1);
-            }}
-            className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-          />
-        </PaginationItem>
-        
-        {renderPageNumbers()}
+          <PaginationContent className="gap-1">
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (currentPage > 1) onPageChange(currentPage - 1);
+                }}
+                className={cn(
+                  "rounded-lg transition-colors",
+                  currentPage === 1 && "pointer-events-none opacity-50"
+                )}
+              />
+            </PaginationItem>
+            
+            {renderPageNumbers()}
 
-        {totalPages > 5 && currentPage < totalPages - 2 && (
-          <PaginationItem>
-            <PaginationEllipsis />
-          </PaginationItem>
-        )}
+            {totalPages > 5 && currentPage < totalPages - 2 && (
+              <PaginationItem>
+                <PaginationEllipsis className="rounded-lg" />
+              </PaginationItem>
+            )}
 
-        <PaginationItem>
-          <PaginationNext
-            href="#"
-            onClick={(e) => {
-              e.preventDefault();
-              if (currentPage < totalPages) onPageChange(currentPage + 1);
-            }}
-            className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
-          />
-        </PaginationItem>
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (currentPage < totalPages) onPageChange(currentPage + 1);
+                }}
+                className={cn(
+                  "rounded-lg transition-colors",
+                  currentPage === totalPages && "pointer-events-none opacity-50"
+                )}
+              />
+            </PaginationItem>
           </PaginationContent>
         </Pagination>
       )}

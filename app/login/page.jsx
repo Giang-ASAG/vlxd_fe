@@ -14,6 +14,22 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+/** Giải mã JWT token */
+function decodeJWT(token) {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) throw new Error("Invalid token format");
+    
+    // Decode payload (phần thứ 2)
+    const payload = parts[1];
+    const decoded = JSON.parse(atob(payload));
+    return decoded;
+  } catch (err) {
+    console.error("Failed to decode JWT:", err);
+    return null;
+  }
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -49,10 +65,49 @@ export default function LoginPage() {
     try {
       setSubmitting(true);
 
-      // Demo/local login: accept any valid email + non-empty password.
-      // Replace with real API call when backend is ready.
+      // Gọi API đăng nhập
+      const response = await fetch("http://localhost:5128/api/XacThucNguoiDung/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          taikhoan: nextEmail,
+          matkhau: password,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData?.error?.message || "Đăng nhập thất bại");
+      }
+
+      const data = await response.json();
+      
+      if (!data.success || !data.data?.token) {
+        throw new Error("Không nhận được token từ server");
+      }
+
+      // Giải mã JWT
+      const decoded = decodeJWT(data.data.token);
+      if (!decoded) {
+        throw new Error("Token không hợp lệ");
+      }
+
+      // Kiểm tra role
+      if (decoded.role !== "admin") {
+        throw new Error("Bạn không có quyền truy cập. Chỉ admin mới có thể đăng nhập.");
+      }
+
+      // Lưu vào session
       setSession({
-        user: { name: "Admin", email: nextEmail },
+        user: {
+          sub: decoded.sub,
+          name: decoded.name,
+          role: decoded.role,
+          email: nextEmail,
+        },
+        token: data.data.token,
         remember,
         createdAt: Date.now(),
       });
