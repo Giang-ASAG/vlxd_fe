@@ -10,7 +10,7 @@ export function TopProducts() {
   useEffect(() => {
     const fetchTopProducts = async () => {
       try {
-        const res = await fetch("http://localhost:5128/api/ThongKe/spBanChay?limit=5");
+        const res = await fetch("https://vlxdbe-production.up.railway.app/api/ThongKe/spBanChay?limit=5");
         const json = await res.json();
         if (json.success) {
           setProducts(json.data);

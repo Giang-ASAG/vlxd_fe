@@ -307,7 +307,7 @@ export default function CustomersPage() {
     setCongNoLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:5128/api/CongNoKhachHang/khach-hang/${customerId}?pageNumber=1&pageSize=20`
+        `https://vlxdbe-production.up.railway.app/api/CongNoKhachHang/khach-hang/${customerId}?pageNumber=1&pageSize=20`
       );
       const json = await res.json();
       setCongNoData((prev) => ({ ...prev, [customerId]: json.data ?? [] }));
@@ -324,7 +324,7 @@ export default function CustomersPage() {
     setPaymentHistoryLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:5128/api/LichSuThanhToans/${customerId}?isNcc=false`
+        `https://vlxdbe-production.up.railway.app/api/LichSuThanhToans/${customerId}?isNcc=false`
       );
       const json = await res.json();
       // Dữ liệu trả về nằm trong json.data, mỗi phần tử có các trường: maDonHang, ngayPhatSinh, soTienThanhToan, phuongThucThanhToan, ghiChu
@@ -560,7 +560,7 @@ export default function CustomersPage() {
 
     try {
       setIsSubmitting(true);
-      const response = await fetch("http://localhost:5128/api/LichSuThanhToans", {
+      const response = await fetch("https://vlxdbe-production.up.railway.app/api/LichSuThanhToans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(paymentRecords),

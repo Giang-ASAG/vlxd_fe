@@ -62,7 +62,7 @@ export default function InvoicesPage() {
     const fetchInvoices = async () => {
       try {
         setLoading(true);
-        const res = await fetch("http://localhost:5128/api/DonHangs/HoaDon");
+        const res = await fetch("https://vlxdbe-production.up.railway.app/api/DonHangs/HoaDon");
         if (!res.ok) throw new Error(`Lỗi ${res.status}: ${res.statusText}`);
         const json = await res.json();
         if (!json.success) throw new Error("API trả về lỗi");

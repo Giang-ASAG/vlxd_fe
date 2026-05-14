@@ -17,7 +17,7 @@ export function RevenueChart() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch("http://localhost:5128/api/ThongKe/doanhthuTuan");
+        const res = await fetch("https://vlxdbe-production.up.railway.app/api/ThongKe/doanhthuTuan");
         const json = await res.json();
         if (json.success) {
           const mapped = json.data.map((item) => ({

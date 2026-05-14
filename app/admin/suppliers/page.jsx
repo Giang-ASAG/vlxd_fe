@@ -292,7 +292,7 @@ export default function SuppliersPage() {
     setCongNoLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:5128/api/CongNoNccs/nha-cung-cap/${supplierId}`
+        `https://vlxdbe-production.up.railway.app/api/CongNoNccs/nha-cung-cap/${supplierId}`
       );
       const json = await res.json();
       setCongNoData((prev) => ({ ...prev, [supplierId]: json.data ?? [] }));
@@ -309,7 +309,7 @@ export default function SuppliersPage() {
     setPaymentHistoryLoading(true);
     try {
       const res = await fetch(
-        `http://localhost:5128/api/LichSuThanhToans/${supplierId}?isNcc=true`
+        `https://vlxdbe-production.up.railway.app/api/LichSuThanhToans/${supplierId}?isNcc=true`
       );
       const json = await res.json();
       setPaymentHistory((prev) => ({ ...prev, [supplierId]: json.data ?? [] }));
@@ -543,7 +543,7 @@ export default function SuppliersPage() {
 
     try {
       setIsSubmitting(true);
-      const response = await fetch("http://localhost:5128/api/LichSuThanhToans", {
+      const response = await fetch("https://vlxdbe-production.up.railway.app/api/LichSuThanhToans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(paymentRecords),

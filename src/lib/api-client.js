@@ -3,7 +3,7 @@
  * Uses native fetch with a simpler interface.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5128/api";
+const BASE_URL = import.meta.env.VITE_API_URL || "https://vlxdbe-production.up.railway.app/api";
 
 async function request(endpoint, options = {}) {
   const { method = "GET", headers = {}, body, ...customConfig } = options;

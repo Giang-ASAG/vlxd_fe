@@ -21,7 +21,7 @@ export function RecentOrders() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await fetch("http://localhost:5128/api/ThongKe/donhangGanNhat");
+        const res = await fetch("https://vlxdbe-production.up.railway.app/api/ThongKe/donhangGanNhat");
         const json = await res.json();
         if (json.success) setOrders(json.data);
       } catch (err) {

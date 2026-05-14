@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 
-const BASE_URL = "http://localhost:5128/api";
+const BASE_URL = "https://vlxdbe-production.up.railway.app";
 
 // ── Tiện ích ──────────────────────────────────────────────────────────────────
 

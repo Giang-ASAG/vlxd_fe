@@ -55,7 +55,7 @@ export function StatsCards() {
     const [data, setData] = useState(null);
 
     useEffect(() => {
-        fetch("http://localhost:5128/api/ThongKe/homnay")
+        fetch("https://vlxdbe-production.up.railway.app/api/ThongKe/homnay")
             .then((res) => res.json())
             .then((json) => {
                 if (json.success) setData(json.data);
