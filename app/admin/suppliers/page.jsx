@@ -745,7 +745,7 @@ export default function SuppliersPage() {
                                             <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
                                               <TableHead>Mã phiếu nhập</TableHead>
                                               <TableHead>Ngày thanh toán</TableHead>
-                                              <TableHead>Kho nhập</TableHead>
+                                              <TableHead>Loại Nhập</TableHead>
                                               <TableHead className="text-right">Tổng nhập</TableHead>
                                               <TableHead className="text-right">Số tiền TT</TableHead>
                                               <TableHead className="text-right">Đã TT</TableHead>
@@ -769,7 +769,7 @@ export default function SuppliersPage() {
                                                   <TableCell className="text-muted-foreground">
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
-                                                <TableCell>{item.khoNhap}</TableCell>
+                                                <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right font-semibold tabular-nums text-emerald-600">
                                                   +{formatCurrencyVN(item.soTienThanhToan)}
