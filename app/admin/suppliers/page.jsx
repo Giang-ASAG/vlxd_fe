@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
 import {
   Building2, CreditCard, History, Loader2, Mail, MapPin, Phone,
   Plus, Search, Trash2, Truck, X, ChevronDown, ChevronUp, AlertCircle,
+  Upload, Download, FileSpreadsheet, CheckCircle, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -24,6 +25,45 @@ import {
   CongNoNccService,
   LichSuThanhToanService,
 } from "@/src/services/api-services";
+import * as XLSX from 'xlsx';
+
+// ─── Toast Notification Component ────────────────────────────────────────────
+
+function Toast({ message, type, onClose }) {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const icons = {
+    success: <CheckCircle className="h-5 w-5 text-emerald-600" />,
+    error: <AlertCircle className="h-5 w-5 text-destructive" />,
+    warning: <AlertTriangle className="h-5 w-5 text-amber-600" />,
+    info: <AlertCircle className="h-5 w-5 text-blue-600" />,
+  };
+
+  const colors = {
+    success: "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20",
+    error: "border-destructive/30 bg-destructive/5",
+    warning: "border-amber-200 bg-amber-50 dark:bg-amber-950/20",
+    info: "border-blue-200 bg-blue-50 dark:bg-blue-950/20",
+  };
+
+  return (
+    <div className={cn(
+      "fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg border p-4 shadow-lg animate-in slide-in-from-top-2",
+      colors[type]
+    )}>
+      {icons[type]}
+      <p className="text-sm font-medium">{message}</p>
+      <button onClick={onClose} className="ml-4 rounded p-1 hover:bg-muted">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -100,6 +140,247 @@ function StatusBadge({ value, labelMap, colorMap }) {
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", cls)}>
       {label}
     </span>
+  );
+}
+
+// ─── Import Dialog Component ─────────────────────────────────────────────────
+
+function ImportDialog({ isOpen, onClose, onImport, isImporting }) {
+  const [file, setFile] = useState(null);
+  const [previewData, setPreviewData] = useState([]);
+  const [errors, setErrors] = useState([]);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    setFile(selectedFile);
+    setErrors([]);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+        const mappedData = [];
+        const validationErrors = [];
+
+        jsonData.forEach((row, index) => {
+          const tenNcc = row["Tên nhà cung cấp"] || row["TenNhaCungCap"] || row["tenNcc"] || "";
+          const soDienThoai = row["Số điện thoại"] || row["SoDienThoai"] || row["soDienThoai"] || "";
+          const email = row["Email"] || row["email"] || "";
+          const diaChi = row["Địa chỉ"] || row["DiaChi"] || row["diaChi"] || "";
+          const ghiChu = row["Ghi chú"] || row["GhiChu"] || row["ghiChu"] || "";
+
+          if (!tenNcc || !soDienThoai) {
+            validationErrors.push(`Dòng ${index + 2}: Thiếu tên hoặc số điện thoại`);
+            return;
+          }
+
+          mappedData.push({
+            tenNcc: String(tenNcc).trim(),
+            soDienThoai: String(soDienThoai).trim(),
+            email: String(email).trim(),
+            diaChi: String(diaChi).trim(),
+            ghiChu: String(ghiChu).trim(),
+          });
+        });
+
+        if (validationErrors.length > 0) {
+          setErrors(validationErrors);
+        } else {
+          setPreviewData(mappedData);
+        }
+      } catch (err) {
+        setErrors(["Không thể đọc file Excel. Vui lòng kiểm tra định dạng file."]);
+      }
+    };
+    reader.readAsArrayBuffer(selectedFile);
+  };
+
+  const handleImport = async () => {
+    if (!file || previewData.length === 0) {
+      setErrors(["Vui lòng chọn file Excel hợp lệ"]);
+      return;
+    }
+
+    await onImport(previewData);
+  };
+
+  const downloadTemplate = () => {
+    const templateData = [
+      {
+        "Tên nhà cung cấp": "Công ty TNHH ABC",
+        "Số điện thoại": "0987654321",
+        "Email": "contact@abc.com",
+        "Địa chỉ": "123 Đường XYZ, Quận 1, TP.HCM",
+        "Ghi chú": "Đối tác chiến lược"
+      },
+      {
+        "Tên nhà cung cấp": "Công ty Cổ phần DEF",
+        "Số điện thoại": "0909123456",
+        "Email": "info@def.vn",
+        "Địa chỉ": "456 Đường LMN, Quận 2, TP.HCM",
+        "Ghi chú": "Cung cấp nguyên liệu chính"
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "NhaCungCap");
+    XLSX.writeFile(wb, `mau_nhap_nha_cung_cap_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl border bg-background shadow-2xl">
+        <div className="border-b bg-primary/5 px-6 py-5">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <FileSpreadsheet className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold">Import nhà cung cấp từ Excel</h3>
+                <p className="text-sm text-muted-foreground">
+                  Tải file mẫu và nhập dữ liệu theo đúng định dạng
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose}
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 p-6">
+          <div className="rounded-lg border border-dashed bg-muted/30 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Download className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Tải file mẫu Excel</p>
+                  <p className="text-xs text-muted-foreground">
+                    Bao gồm các cột: Tên nhà cung cấp, Số điện thoại, Email, Địa chỉ, Ghi chú
+                  </p>
+                </div>
+              </div>
+              <Button variant="outline" size="sm" onClick={downloadTemplate} className="gap-2">
+                <Download className="h-4 w-4" />
+                Tải mẫu
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Chọn file Excel</Label>
+            <div className="flex items-center gap-3">
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileChange}
+                className="flex-1"
+              />
+              {file && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFile(null);
+                    setPreviewData([]);
+                    setErrors([]);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {errors.length > 0 && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-destructive">Lỗi validation:</p>
+                  <ul className="mt-1 list-inside list-disc text-xs text-destructive/80">
+                    {errors.slice(0, 5).map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                    {errors.length > 5 && (
+                      <li>... và {errors.length - 5} lỗi khác</li>
+                    )}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {previewData.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">
+                  Xem trước dữ liệu ({previewData.length} dòng)
+                </p>
+                <CheckCircle className="h-4 w-4 text-emerald-500" />
+              </div>
+              <div className="max-h-64 overflow-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 text-xs">
+                      <TableHead>Tên nhà cung cấp</TableHead>
+                      <TableHead>Số điện thoại</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Địa chỉ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewData.slice(0, 10).map((item, idx) => (
+                      <TableRow key={idx} className="text-xs">
+                        <TableCell className="font-medium">{item.tenNcc}</TableCell>
+                        <TableCell>{item.soDienThoai}</TableCell>
+                        <TableCell>{item.email || "--"}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{item.diaChi || "--"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {previewData.length > 10 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-muted-foreground">
+                          ... và {previewData.length - 10} dòng khác
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t bg-muted/20 px-6 py-4">
+          <Button variant="outline" onClick={onClose} disabled={isImporting} className="px-5">
+            Hủy
+          </Button>
+          <Button
+            onClick={handleImport}
+            disabled={!file || previewData.length === 0 || isImporting || errors.length > 0}
+            className="gap-2 px-5"
+          >
+            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Import dữ liệu
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -196,6 +477,17 @@ export default function SuppliersPage() {
   const [paymentHistory, setPaymentHistory] = useState({});
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
   const [payDialog, setPayDialog]           = useState(EMPTY_PAY_DIALOG);
+  
+  // Import states
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  
+  // Toast states
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
+  };
 
   // ─── API ────────────────────────────────────────────────────────────────────
 
@@ -276,8 +568,13 @@ export default function SuppliersPage() {
         maNcc: 0, tenNcc: formData.tenNcc.trim(), soDienThoai: formData.soDienThoai.trim(),
         email: formData.email.trim(), diaChi: formData.diaChi.trim(), ghiChu: formData.ghiChu.trim(),
       });
-      await fetchSuppliers(); resetForm(); setAddFormOpen(false);
-    } catch (err) { alert(`Lỗi: ${err.message}`); }
+      await fetchSuppliers();
+      resetForm();
+      setAddFormOpen(false);
+      showToast(`✅ Thêm nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
+    } catch (err) { 
+      showToast(`❌ Lỗi: ${err.message}`, "error");
+    }
     finally { setIsSubmitting(false); }
   };
 
@@ -290,23 +587,103 @@ export default function SuppliersPage() {
         soDienThoai: formData.soDienThoai.trim(), email: formData.email.trim(),
         diaChi: formData.diaChi.trim(), ghiChu: formData.ghiChu.trim(),
       });
-      await fetchSuppliers(); setExpandedId(null); resetForm();
-    } catch (err) { alert(`Lỗi: ${err.message}`); }
+      await fetchSuppliers();
+      setExpandedId(null);
+      resetForm();
+      showToast(`✅ Cập nhật nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
+    } catch (err) { 
+      showToast(`❌ Lỗi: ${err.message}`, "error");
+    }
     finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteSupplier = async (supplierId) => {
-    if (!confirm("Bạn chắc chắn muốn xóa nhà cung cấp này?")) return;
+  const handleDeleteSupplier = async (supplierId, supplierName) => {
+    if (!confirm(`Bạn chắc chắn muốn xóa nhà cung cấp "${supplierName}"?`)) return;
     setIsSubmitting(true);
     try {
       await SupplierService.delete(supplierId);
-      await fetchSuppliers(); setExpandedId(null); resetForm();
+      await fetchSuppliers();
+      setExpandedId(null);
+      resetForm();
+      showToast(`✅ Xóa nhà cung cấp "${supplierName}" thành công!`, "success");
     } catch (err) {
       const msg = err.message || "";
       if (msg.includes("ràng buộc") || msg.includes("constraint") || msg.includes("foreign") || msg.includes("related")) {
-        alert("⚠️ Không thể xóa nhà cung cấp này!\n\nLý do: Nhà cung cấp có dữ liệu liên quan trong hệ thống.");
-      } else { alert(`Lỗi: ${msg}`); }
+        showToast(`⚠️ Không thể xóa nhà cung cấp "${supplierName}" vì có dữ liệu liên quan trong hệ thống!`, "warning");
+      } else { 
+        showToast(`❌ Lỗi: ${msg}`, "error");
+      }
     } finally { setIsSubmitting(false); }
+  };
+
+  // ─── Import/Export Functions ─────────────────────────────────────────────────
+
+  const handleImportSuppliers = async (importData) => {
+    setIsImporting(true);
+    let successCount = 0;
+    let errorCount = 0;
+    let duplicateCount = 0;
+    const errors = [];
+    const duplicates = [];
+
+    try {
+      const existingSuppliers = await SupplierService.getAll();
+      const existingSupplierNames = new Set();
+      
+      if (existingSuppliers?.data) {
+        existingSuppliers.data.forEach(supplier => {
+          if (supplier.tenNcc) {
+            existingSupplierNames.add(supplier.tenNcc.toLowerCase().trim());
+          }
+        });
+      }
+
+      for (const supplier of importData) {
+        const isDuplicate = existingSupplierNames.has(supplier.tenNcc.toLowerCase().trim());
+        
+        if (isDuplicate) {
+          duplicateCount++;
+          duplicates.push(supplier.tenNcc);
+          continue;
+        }
+
+        try {
+          await SupplierService.create({
+            maNcc: 0,
+            tenNcc: supplier.tenNcc,
+            soDienThoai: supplier.soDienThoai,
+            email: supplier.email || "",
+            diaChi: supplier.diaChi || "",
+            ghiChu: supplier.ghiChu || "",
+          });
+          successCount++;
+          existingSupplierNames.add(supplier.tenNcc.toLowerCase().trim());
+        } catch (err) {
+          errorCount++;
+          errors.push(`${supplier.tenNcc}: ${err.message}`);
+        }
+      }
+
+      await fetchSuppliers();
+      setImportDialogOpen(false);
+      
+      let message = `📊 KẾT QUẢ IMPORT\n\n`;
+      message += `✅ Thành công: ${successCount} nhà cung cấp\n`;
+      message += `⚠️ Trùng lặp: ${duplicateCount} nhà cung cấp\n`;
+      message += `❌ Thất bại: ${errorCount} nhà cung cấp\n`;
+      message += `📝 Tổng số: ${importData.length} nhà cung cấp\n`;
+      
+      if (duplicates.length > 0) {
+        message += `\n🔁 Danh sách trùng: ${duplicates.slice(0, 5).join(", ")}`;
+        if (duplicates.length > 5) message += `... và ${duplicates.length - 5} nhà cung cấp khác`;
+      }
+      
+      showToast(message, successCount > 0 ? "success" : "warning");
+    } catch (err) {
+      showToast(`❌ Lỗi khi import: ${err.message}`, "error");
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   // ─── Payment ──────────────────────────────────────────────────────────────────
@@ -318,11 +695,17 @@ export default function SuppliersPage() {
 
   const handleConfirmPay = async () => {
     const amount = toNumber(payDialog.amount);
-    if (amount <= 0) { alert("Vui lòng nhập số tiền hợp lệ."); return; }
+    if (amount <= 0) { 
+      showToast("Vui lòng nhập số tiền hợp lệ.", "warning");
+      return; 
+    }
 
     const items     = payDialog.items;
     const totalDebt = items.reduce((sum, x) => sum + toNumber(x.soTienNo), 0);
-    if (amount > totalDebt) { alert("Số tiền không được vượt quá tổng nợ."); return; }
+    if (amount > totalDebt) { 
+      showToast("Số tiền không được vượt quá tổng nợ.", "warning");
+      return; 
+    }
 
     const isBulk = items.length > 1;
     let paymentRecords = [];
@@ -358,7 +741,10 @@ export default function SuppliersPage() {
     }
 
     paymentRecords = paymentRecords.filter((r) => r.soTien > 0);
-    if (!paymentRecords.length) { alert("Không có khoản thanh toán hợp lệ."); return; }
+    if (!paymentRecords.length) { 
+      showToast("Không có khoản thanh toán hợp lệ.", "warning");
+      return; 
+    }
 
     try {
       setIsSubmitting(true);
@@ -368,8 +754,10 @@ export default function SuppliersPage() {
       invalidatePaymentHistory(String(maNcc));
       await fetchSuppliers();
       closePayDialog();
-      alert("Đã ghi nhận thanh toán thành công.");
-    } catch (err) { alert(`Lỗi: ${err.message}`); }
+      showToast(`✅ Thanh toán thành công ${formatCurrencyVN(amount)}!`, "success");
+    } catch (err) { 
+      showToast(`❌ Lỗi: ${err.message}`, "error");
+    }
     finally { setIsSubmitting(false); }
   };
 
@@ -411,7 +799,7 @@ export default function SuppliersPage() {
           <div>
             {isEdit && supplier && (
               <Button type="button" variant="destructive" size="sm"
-                onClick={() => handleDeleteSupplier(supplier.id)} disabled={isSubmitting}>
+                onClick={() => handleDeleteSupplier(supplier.id, supplier.name)} disabled={isSubmitting}>
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Xóa nhà cung cấp
               </Button>
             )}
@@ -464,16 +852,31 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Nhà cung cấp</h1>
           <p className="text-sm text-muted-foreground">Quản lý thông tin và công nợ nhà cung cấp</p>
         </div>
-        <Button onClick={handleAddClick} className="gap-2">
-          <Plus className="h-4 w-4" />
-          {addFormOpen ? "Đóng form" : "Thêm nhà cung cấp"}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportDialogOpen(true)} className="gap-2">
+            <Upload className="h-4 w-4" />
+            Import Excel
+          </Button>
+          <Button onClick={handleAddClick} className="gap-2">
+            <Plus className="h-4 w-4" />
+            {addFormOpen ? "Đóng form" : "Thêm nhà cung cấp"}
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -549,7 +952,6 @@ export default function SuppliersPage() {
                       isExpanded ? "bg-primary/5 hover:bg-primary/5" : "hover:bg-muted/40")}
                     onClick={() => handleToggleSupplier(supplier)}
                   >
-                    {/* Avatar */}
                     <TableCell className="pr-0">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                         {getInitials(supplier.name)}
@@ -613,7 +1015,6 @@ export default function SuppliersPage() {
                               </TabsTrigger>
                             </TabsList>
 
-                            {/* Tab: Thông tin */}
                             <TabsContent value="supplier-info" className="mt-4 space-y-4">
                               <SupplierStatsStrip supplier={supplier} />
                               <Card className="overflow-hidden shadow-sm">
@@ -623,7 +1024,6 @@ export default function SuppliersPage() {
                               </Card>
                             </TabsContent>
 
-                            {/* Tab: Công nợ */}
                             <TabsContent value="cong-no" className="mt-4">
                               {(() => {
                                 const list = (congNoData[supplier.id] ?? []).filter((x) => x.trangThaiNo !== "da_thanh_toan");
@@ -675,7 +1075,8 @@ export default function SuppliersPage() {
                                                 <TableCell className="text-muted-foreground">
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
-                                                <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell>
+                                                {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}
+                                               <TableCell>{item.tenKhoNhap}</TableCell>
                                                 <TableCell>{item.tenNguoiLap}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrencyVN(item.daThanhToanNcc)}</TableCell>
@@ -719,7 +1120,6 @@ export default function SuppliersPage() {
                               })()}
                             </TabsContent>
 
-                            {/* Tab: Lịch sử TT */}
                             <TabsContent value="payment-history" className="mt-4">
                               {(() => {
                                 const history = paymentHistory[supplier.id] ?? [];
@@ -769,7 +1169,8 @@ export default function SuppliersPage() {
                                                   <TableCell className="text-muted-foreground">
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
-                                                <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell>
+                                                {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}
+                                                <TableCell>{item.tenKhoNhap}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right font-semibold tabular-nums text-emerald-600">
                                                   +{formatCurrencyVN(item.soTienThanhToan)}
@@ -817,6 +1218,13 @@ export default function SuppliersPage() {
       <PaymentDialog
         dialog={payDialog} isSubmitting={isSubmitting}
         onChange={updatePayDialog} onConfirm={handleConfirmPay} onClose={closePayDialog}
+      />
+
+      <ImportDialog
+        isOpen={importDialogOpen}
+        onClose={() => setImportDialogOpen(false)}
+        onImport={handleImportSuppliers}
+        isImporting={isImporting}
       />
     </div>
   );
