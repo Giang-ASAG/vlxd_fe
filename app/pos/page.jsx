@@ -19,8 +19,7 @@ import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { getSession } from "@/src/auth/session";
-
-const BASE_URL = "https://vlxdbe-production.up.railway.app/api";
+import api from "@/src/lib/api-client"; // ← dùng api-client thay raw fetch
 
 // ── Tiện ích ──────────────────────────────────────────────────────────────────
 
@@ -59,7 +58,7 @@ function mapCustomer(c) {
 }
 
 /**
- * Tính trạng thái tồn kho dựa trên tổng tồn kho (số lượng + tồn kho hiện tại)
+ * Tính trạng thái tồn kho dựa trên tổng tồn kho (soLuong + tonKhoHienTai)
  * - Tổng <= 0: Hết hàng
  * - Tổng <= 100: Sắp hết
  * - Tổng > 100: Còn hàng
@@ -104,18 +103,11 @@ export default function POSPage() {
       setLoadingData(true);
       setFetchError(null);
 
-      const [spRes, dmRes, khRes] = await Promise.all([
-        fetch(`${BASE_URL}/SanPhams`),
-        fetch(`${BASE_URL}/DanhMucs`),
-        fetch(`${BASE_URL}/KhachHangs`),
-      ]);
-
-      if (!spRes.ok) throw new Error(`SanPhams: ${spRes.status}`);
-      if (!dmRes.ok) throw new Error(`DanhMucs: ${dmRes.status}`);
-      if (!khRes.ok) throw new Error(`KhachHangs: ${khRes.status}`);
-
+      // api.get tự parse JSON và throw nếu response không ok
       const [spJson, dmJson, khJson] = await Promise.all([
-        spRes.json(), dmRes.json(), khRes.json(),
+        api.get("/SanPhams"),
+        api.get("/DanhMucs"),
+        api.get("/KhachHangs"),
       ]);
 
       const dmList = dmJson?.data ?? [];
@@ -126,7 +118,7 @@ export default function POSPage() {
           const stock = toNumber(p.soLuong ?? 0);
           const currentInventory = toNumber(p.tonKhoHienTai ?? 0);
           const totalStock = stock + currentInventory;
-          
+
           return {
             id: toText(p.maSanPham),
             name: toText(p.tenSanPham),
@@ -135,9 +127,9 @@ export default function POSPage() {
             cost: toNumber(p.giaNhapGanNhat),
             unit: toText(p.donViChinh) || "Cái",
             category: dmMap[p.maDanhMuc] ?? "Khác",
-            stock: stock,
+            stock,
             tonKhoHienTai: currentInventory,
-            totalStock: totalStock,
+            totalStock,
             status: getStockStatus(totalStock),
           };
         })
@@ -214,7 +206,7 @@ export default function POSPage() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const fmt = (n) => new Intl.NumberFormat("vi-VN").format(toNumber(n));
-  
+
   const handleOpenPrintPage = useCallback(() => {
     if (cart.length === 0) return;
 
@@ -243,11 +235,7 @@ export default function POSPage() {
           i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
         );
       }
-      return [...prev, { 
-        ...product, 
-        quantity: 1,
-        maxStock: product.totalStock 
-      }];
+      return [...prev, { ...product, quantity: 1, maxStock: product.totalStock }];
     });
   }, []);
 
@@ -300,9 +288,9 @@ export default function POSPage() {
     setSelectedCustomerId("");
     setCustomerQuery("");
   };
-  
+
   const session = getSession();
-  
+
   // ── Gửi đơn hàng ─────────────────────────────────────────────────────────
   const handleCheckout = async () => {
     try {
@@ -330,16 +318,8 @@ export default function POSPage() {
         })),
       };
 
-      const res = await fetch(`${BASE_URL}/DonHangs/themgiohang`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        throw new Error(errText || `HTTP ${res.status}`);
-      }
+      // api.post tự set Content-Type, stringify body, và throw nếu lỗi
+      await api.post("/DonHangs/themgiohang", payload);
 
       setCheckoutSuccess(true);
     } catch (err) {
