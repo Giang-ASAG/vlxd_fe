@@ -880,7 +880,9 @@ export default function CustomersPage() {
                                               ) : history.map((record, idx) => (
                                                 <TableRow key={idx} className="text-sm hover:bg-muted/30">
                                                   <TableCell className="font-medium">{record.maDonHang}</TableCell>
-                                                  <TableCell className="text-muted-foreground">{formatDate(record.ngayPhatSinh)}</TableCell>
+                                                <TableCell className="text-muted-foreground">
+                                                  {new Date(record.ngayPhatSinh).toLocaleDateString("vi-VN")}
+                                                </TableCell>
                                                   <TableCell className="text-right font-semibold tabular-nums text-emerald-600">
                                                     +{formatCurrency(record.soTienThanhToan)}
                                                   </TableCell>

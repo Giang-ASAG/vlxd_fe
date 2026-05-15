@@ -449,7 +449,6 @@ function ProductPurchaseHistoryTab({
                 <TableHead>Mã phiếu</TableHead>
                 <TableHead>Ngày nhập</TableHead>
                 <TableHead>Nhà cung cấp</TableHead>
-                <TableHead>Kho nhập</TableHead>
                 <TableHead className="text-right">Số lượng</TableHead>
                 <TableHead className="text-right">Giá nhập</TableHead>
                 <TableHead className="text-right">Thành tiền</TableHead>
@@ -468,7 +467,7 @@ function ProductPurchaseHistoryTab({
                   line.thanhTien ?? quantity * unitPrice
                 );
                 const loainhap =
-                  line?.loaiNhap === true ? "Nhập kho" : "Nhập cửa hàng";
+                  line?.loaiNhap === true ? `Nhập ${order?.tenKho ?? ""}` : "Nhập cửa hàng";
                 return (
                   <TableRow
                     key={`${order.maPhieuNhap ?? "pn"}-${getLineProductId(line) ?? product.id}-${index}`}
@@ -487,7 +486,6 @@ function ProductPurchaseHistoryTab({
                         suppliers.find((s) => s.maNcc === order.maNcc)?.tenNcc ??
                         "--"}
                     </TableCell>
-                    <TableCell>{order.tenKho ?? "--"}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {quantity.toLocaleString("vi-VN")} {product.unit}
                     </TableCell>

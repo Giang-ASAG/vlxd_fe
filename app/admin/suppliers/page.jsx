@@ -650,7 +650,7 @@ export default function SuppliersPage() {
                                             <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
                                               <TableHead>Mã phiếu</TableHead>
                                               <TableHead>Ngày phát sinh</TableHead>
-                                              <TableHead>Kho nhập</TableHead>
+                                              <TableHead>Loại nhập</TableHead>
                                               <TableHead>Người lập</TableHead>
                                               <TableHead className="text-right">Tổng nhập</TableHead>
                                               <TableHead className="text-right">Đã TT</TableHead>
@@ -675,7 +675,7 @@ export default function SuppliersPage() {
                                                 <TableCell className="text-muted-foreground">
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
-                                                <TableCell>{item.tenKhoNhap}</TableCell>
+                                                <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell>
                                                 <TableCell>{item.tenNguoiLap}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrencyVN(item.daThanhToanNcc)}</TableCell>
@@ -766,7 +766,9 @@ export default function SuppliersPage() {
                                                 <TableCell className="font-medium">
                                                   PN{String(item.maPhieu).padStart(4, "0")}
                                                 </TableCell>
-                                                <TableCell className="text-muted-foreground">{formatDateTime(item.ngayPhatSinh)}</TableCell>
+                                                  <TableCell className="text-muted-foreground">
+                                                  {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
+                                                </TableCell>
                                                 <TableCell>{item.khoNhap}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right font-semibold tabular-nums text-emerald-600">
