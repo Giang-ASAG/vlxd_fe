@@ -14,12 +14,13 @@ import {
   Search, X, Plus, Minus, Trash2, CreditCard, Banknote,
   ArrowLeft, User, ShoppingCart, Package, UserCheck,
   AlertCircle, Loader2, RefreshCw, CheckCircle2, Printer,
+  Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { getSession } from "@/src/auth/session";
-import api from "@/src/lib/api-client"; // ← dùng api-client thay raw fetch
+import api from "@/src/lib/api-client";
 
 // ── Tiện ích ──────────────────────────────────────────────────────────────────
 
@@ -59,9 +60,6 @@ function mapCustomer(c) {
 
 /**
  * Tính trạng thái tồn kho dựa trên tổng tồn kho (soLuong + tonKhoHienTai)
- * - Tổng <= 0: Hết hàng
- * - Tổng <= 100: Sắp hết
- * - Tổng > 100: Còn hàng
  */
 function getStockStatus(totalStock) {
   if (totalStock <= 0) return { label: "Hết hàng", className: "bg-destructive/10 text-destructive border-destructive/20" };
@@ -94,6 +92,10 @@ export default function POSPage() {
   const [linePriceEdit, setLinePriceEdit] = useState(null);
   const [qtyEdit, setQtyEdit] = useState(null);
 
+  // ── Cảnh báo tồn kho ─────────────────────────────────────────────────────
+  const [stockWarningOpen, setStockWarningOpen] = useState(false);
+  const [stockWarningItems, setStockWarningItems] = useState([]);
+
   const searchRef = useRef(null);
   const customerInputRef = useRef(null);
 
@@ -103,7 +105,6 @@ export default function POSPage() {
       setLoadingData(true);
       setFetchError(null);
 
-      // api.get tự parse JSON và throw nếu response không ok
       const [spJson, dmJson, khJson] = await Promise.all([
         api.get("/SanPhams"),
         api.get("/DanhMucs"),
@@ -127,8 +128,8 @@ export default function POSPage() {
             cost: toNumber(p.giaNhapGanNhat),
             unit: toText(p.donViChinh) || "Cái",
             category: dmMap[p.maDanhMuc] ?? "Khác",
-            stock,
-            tonKhoHienTai: currentInventory,
+            stock,           // soLuong — tồn kệ (shelf)
+            tonKhoHienTai: currentInventory,  // tồn kho (warehouse)
             totalStock,
             status: getStockStatus(totalStock),
           };
@@ -153,7 +154,6 @@ export default function POSPage() {
   // ── Giá trị phái sinh ────────────────────────────────────────────────────
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
 
-  /** Lọc khách hàng — không phân biệt dấu */
   const filteredCustomers = useMemo(() => {
     const q = removeAccents(customerQuery);
     if (!q) return customers;
@@ -167,7 +167,6 @@ export default function POSPage() {
   const searchTrimmed = search.trim();
   const hasSearchQuery = searchTrimmed.length > 0;
 
-  /** Lọc sản phẩm — không phân biệt dấu */
   const filteredProducts = useMemo(() => {
     if (!hasSearchQuery) return [];
     const q = removeAccents(searchTrimmed);
@@ -197,12 +196,13 @@ export default function POSPage() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "F2") { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === "F9" && cart.length) { e.preventDefault(); setCheckoutOpen(true); }
+      if (e.key === "F9" && cart.length) { e.preventDefault(); handleCheckoutIntent(); }
       if (e.key === "Escape") { setSearch(""); searchRef.current?.focus(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cart.length]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const fmt = (n) => new Intl.NumberFormat("vi-VN").format(toNumber(n));
@@ -235,7 +235,17 @@ export default function POSPage() {
           i.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
         );
       }
-      return [...prev, { ...product, quantity: 1, maxStock: product.totalStock }];
+      return [
+        ...prev,
+        {
+          ...product,
+          quantity: 1,
+          maxStock: product.totalStock,
+          // Giữ lại stock (tồn kệ) và tonKhoHienTai (kho) để kiểm tra sau
+          stock: product.stock,
+          tonKhoHienTai: product.tonKhoHienTai,
+        },
+      ];
     });
   }, []);
 
@@ -291,6 +301,32 @@ export default function POSPage() {
 
   const session = getSession();
 
+  // ── Kiểm tra tồn kho trước khi mở thanh toán ─────────────────────────────
+  /**
+   * Các item cần lấy thêm từ kho = item.quantity > item.stock (tồn kệ)
+   * Phần thiếu = item.quantity - item.stock → lấy từ item.tonKhoHienTai
+   */
+  const handleCheckoutIntent = useCallback(() => {
+    if (cart.length === 0) return;
+
+    const needWarehouse = cart.filter(
+      (item) => item.quantity > (item.stock ?? 0)
+    );
+
+    if (needWarehouse.length > 0) {
+      setStockWarningItems(needWarehouse);
+      setStockWarningOpen(true);
+    } else {
+      setCheckoutOpen(true);
+    }
+  }, [cart]);
+
+  /** Người dùng đồng ý lấy hàng từ kho bù vào */
+  const handleWarehouseConfirm = () => {
+    setStockWarningOpen(false);
+    setCheckoutOpen(true);
+  };
+
   // ── Gửi đơn hàng ─────────────────────────────────────────────────────────
   const handleCheckout = async () => {
     try {
@@ -318,7 +354,6 @@ export default function POSPage() {
         })),
       };
 
-      // api.post tự set Content-Type, stringify body, và throw nếu lỗi
       await api.post("/DonHangs/themgiohang", payload);
 
       setCheckoutSuccess(true);
@@ -587,103 +622,119 @@ export default function POSPage() {
                     <div className="sr-only">Thao tác</div>
                   </div>
 
-                  {cart.map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center hover:bg-muted/30 transition-colors"
-                      style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
-                    >
-                      {/* Tên */}
-                      <div className="min-w-0 flex items-start gap-3">
-                        <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                          <Package className="h-5 w-5 text-muted-foreground" />
+                  {cart.map((item) => {
+                    const needsWarehouse = item.quantity > (item.stock ?? 0);
+                    const warehouseNeeded = needsWarehouse
+                      ? item.quantity - (item.stock ?? 0)
+                      : 0;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          "grid gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center hover:bg-muted/30 transition-colors",
+                          needsWarehouse && "bg-amber-50/50 dark:bg-amber-950/10"
+                        )}
+                        style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
+                      >
+                        {/* Tên */}
+                        <div className="min-w-0 flex items-start gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                            <Package className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Tồn kệ: {item.stock ?? 0} · Kho: {item.tonKhoHienTai ?? 0} {item.unit}
+                            </p>
+                            {needsWarehouse && (
+                              <p className="text-[10px] text-amber-600 font-medium mt-0.5 flex items-center gap-1">
+                                <Warehouse className="h-3 w-3 shrink-0" />
+                                Cần lấy {warehouseNeeded} {item.unit} từ kho
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Tồn: {item.maxStock} {item.unit}
-                          </p>
+
+                        {/* Giá vốn */}
+                        <div className="text-sm text-muted-foreground font-mono">{fmt(item.cost ?? 0)}đ</div>
+
+                        {/* Giá bán editable */}
+                        <div className="text-right">
+                          <Input
+                            className="h-9 text-right font-medium text-sm px-2 rounded-lg"
+                            inputMode="numeric"
+                            value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
+                            onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/\D/g, "");
+                              setLinePriceEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                            }}
+                            onBlur={() => {
+                              if (linePriceEdit?.id !== item.id) return;
+                              const price = Math.max(0, Number(linePriceEdit.raw) || 0);
+                              setCart((c) => c.map((i) => i.id === item.id ? { ...i, price } : i));
+                              setLinePriceEdit(null);
+                            }}
+                          />
                         </div>
-                      </div>
 
-                      {/* Giá vốn */}
-                      <div className="text-sm text-muted-foreground font-mono">{fmt(item.cost ?? 0)}đ</div>
-
-                      {/* Giá bán editable */}
-                      <div className="text-right">
-                        <Input
-                          className="h-9 text-right font-medium text-sm px-2 rounded-lg"
-                          inputMode="numeric"
-                          value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
-                          onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, "");
-                            setLinePriceEdit((p) => p?.id === item.id ? { ...p, raw } : p);
-                          }}
-                          onBlur={() => {
-                            if (linePriceEdit?.id !== item.id) return;
-                            const price = Math.max(0, Number(linePriceEdit.raw) || 0);
-                            setCart((c) => c.map((i) => i.id === item.id ? { ...i, price } : i));
-                            setLinePriceEdit(null);
-                          }}
-                        />
-                      </div>
-
-                      {/* Số lượng */}
-                      <div className="flex items-center gap-1 justify-center">
-                        <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
-                          onClick={() => { setQtyEdit(null); updateQuantity(item.id, -1); }}
-                          aria-label="Giảm">
-                          <Minus className="h-3.5 w-3.5" />
-                        </Button>
-                        <Input
-                          className="h-8 w-14 text-center font-medium text-sm px-1 rounded-lg"
-                          inputMode="numeric"
-                          value={qtyEdit?.id === item.id ? qtyEdit.raw : String(item.quantity)}
-                          onFocus={() => setQtyEdit({ id: item.id, raw: String(item.quantity) })}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, "");
-                            setQtyEdit((p) => p?.id === item.id ? { ...p, raw } : p);
-                          }}
-                          onBlur={() => {
-                            if (qtyEdit?.id !== item.id) return;
-                            commitQuantity(item.id, qtyEdit.raw);
-                            setQtyEdit(null);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              if (qtyEdit?.id === item.id) {
-                                commitQuantity(item.id, qtyEdit.raw);
-                                setQtyEdit(null);
+                        {/* Số lượng */}
+                        <div className="flex items-center gap-1 justify-center">
+                          <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
+                            onClick={() => { setQtyEdit(null); updateQuantity(item.id, -1); }}
+                            aria-label="Giảm">
+                            <Minus className="h-3.5 w-3.5" />
+                          </Button>
+                          <Input
+                            className="h-8 w-14 text-center font-medium text-sm px-1 rounded-lg"
+                            inputMode="numeric"
+                            value={qtyEdit?.id === item.id ? qtyEdit.raw : String(item.quantity)}
+                            onFocus={() => setQtyEdit({ id: item.id, raw: String(item.quantity) })}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/\D/g, "");
+                              setQtyEdit((p) => p?.id === item.id ? { ...p, raw } : p);
+                            }}
+                            onBlur={() => {
+                              if (qtyEdit?.id !== item.id) return;
+                              commitQuantity(item.id, qtyEdit.raw);
+                              setQtyEdit(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                if (qtyEdit?.id === item.id) {
+                                  commitQuantity(item.id, qtyEdit.raw);
+                                  setQtyEdit(null);
+                                }
+                                e.currentTarget.blur();
                               }
-                              e.currentTarget.blur();
-                            }
-                          }}
-                        />
-                        <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
-                          onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
-                          disabled={item.quantity >= item.maxStock}
-                          aria-label="Tăng">
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                            }}
+                          />
+                          <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 rounded-lg"
+                            onClick={() => { setQtyEdit(null); updateQuantity(item.id, 1); }}
+                            disabled={item.quantity >= item.maxStock}
+                            aria-label="Tăng">
+                            <Plus className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
 
-                      {/* Thành tiền */}
-                      <div className="text-right font-bold text-sm text-primary font-mono">
-                        {fmt(item.price * item.quantity)}đ
-                      </div>
+                        {/* Thành tiền */}
+                        <div className="text-right font-bold text-sm text-primary font-mono">
+                          {fmt(item.price * item.quantity)}đ
+                        </div>
 
-                      {/* Xóa */}
-                      <div className="flex justify-end">
-                        <Button type="button" variant="ghost" size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive shrink-0 rounded-lg"
-                          onClick={() => removeFromCart(item.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {/* Xóa */}
+                        <div className="flex justify-end">
+                          <Button type="button" variant="ghost" size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive shrink-0 rounded-lg"
+                            onClick={() => removeFromCart(item.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -810,17 +861,98 @@ export default function POSPage() {
             )}
           </div>
 
+          {/* ── Nút thanh toán: gọi handleCheckoutIntent thay vì setCheckoutOpen ── */}
           <Button
             size="lg"
             className="w-full h-14 text-lg gap-2 bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground shadow-md rounded-xl"
             disabled={cart.length === 0}
-            onClick={() => setCheckoutOpen(true)}
+            onClick={handleCheckoutIntent}
           >
             <CreditCard className="h-5 w-5" />
             Thanh toán (F9)
           </Button>
         </div>
       </div>
+
+      {/* ── Dialog cảnh báo tồn kho ──────────────────────────────────────────── */}
+      <Dialog
+        open={stockWarningOpen}
+        onOpenChange={(o) => { if (!o) setStockWarningOpen(false); }}
+      >
+        <DialogContent className="sm:max-w-[480px] rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100">
+                <Warehouse className="h-5 w-5 text-amber-600" />
+              </div>
+              Cần lấy hàng từ kho
+            </DialogTitle>
+            <DialogDescription>
+              Một số sản phẩm vượt quá tồn kệ, cần bù thêm từ kho để đủ số lượng.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 my-2">
+            {/* Danh sách sản phẩm cần lấy từ kho */}
+            <div className="rounded-xl border overflow-hidden">
+              <div className="grid grid-cols-3 gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
+                <div className="col-span-1">Sản phẩm</div>
+                <div className="text-center">Tồn kệ / Đặt</div>
+                <div className="text-right">Cần lấy kho</div>
+              </div>
+              <div className="divide-y max-h-56 overflow-auto">
+                {stockWarningItems.map((item) => {
+                  const shelfStock = item.stock ?? 0;
+                  const needed = item.quantity - shelfStock;
+                  return (
+                    <div
+                      key={item.id}
+                      className="grid grid-cols-3 gap-2 px-3 py-3 items-center text-sm"
+                    >
+                      <div className="col-span-1 min-w-0">
+                        <p className="font-medium truncate leading-snug">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{item.sku}</p>
+                      </div>
+                      <div className="text-center">
+                        <span className="text-muted-foreground font-mono">{shelfStock}</span>
+                        <span className="text-muted-foreground mx-1">/</span>
+                        <span className="font-semibold font-mono">{item.quantity}</span>
+                        <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-xs font-semibold font-mono">
+                          +{needed} {item.unit}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 border">
+              Bạn có muốn xuất hàng từ kho để bù vào đơn này không?
+            </p>
+          </div>
+
+          <div className="flex gap-3 mt-1">
+            <Button
+              variant="outline"
+              className="flex-1 h-11 rounded-xl"
+              onClick={() => setStockWarningOpen(false)}
+            >
+              Không đồng ý
+            </Button>
+            <Button
+              className="flex-1 h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white gap-2 shadow-sm"
+              onClick={handleWarehouseConfirm}
+            >
+              <Warehouse className="h-4 w-4" />
+              Đồng ý, lấy từ kho
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Dialog thanh toán ─────────────────────────────────────────────── */}
       <Dialog
