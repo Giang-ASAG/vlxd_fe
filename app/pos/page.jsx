@@ -368,9 +368,37 @@ export default function POSPage() {
     }
   };
 
-  const handleCloseSuccess = () => {
+  // ── Hàm reload toàn bộ trang và API ──────────────────────────────────────
+  const handleFullReload = useCallback(async () => {
+    // Hiển thị trạng thái loading
+    setLoadingData(true);
+    
+    // Reload dữ liệu từ API
+    await loadData();
+    
+    // Reset tất cả state về trạng thái ban đầu
     clearCart();
     setCheckoutOpen(false);
+    setCheckoutSuccess(false);
+    setSearch("");
+    setSelectedCategory("Tất cả");
+    setCustomerQuery("");
+    setSelectedCustomerId("");
+    setAmountPaid("");
+    setPaymentMethod(false);
+    setSubmitError(null);
+    
+    // Focus vào ô tìm kiếm
+    setTimeout(() => {
+      searchRef.current?.focus();
+    }, 100);
+    
+  }, [loadData]);
+
+  // ── Xử lý khi đóng dialog thành công ─────────────────────────────────────
+  const handleCloseSuccess = () => {
+    // Reload toàn bộ dữ liệu và reset state
+    handleFullReload();
   };
 
   // ── Category Filters ─────────────────────────────────────────────────────
@@ -991,9 +1019,28 @@ export default function POSPage() {
                   </p>
                 )}
               </div>
-              <Button size="lg" className="mt-2 w-full rounded-xl" onClick={handleCloseSuccess}>
-                Tạo đơn mới
-              </Button>
+              <div className="flex gap-3 w-full">
+                <Button 
+                  size="lg" 
+                  variant="outline"
+                  className="flex-1 rounded-xl" 
+                  onClick={() => {
+                    // In lại hóa đơn nếu cần
+                    handleOpenPrintPage();
+                  }}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  In lại
+                </Button>
+                <Button 
+                  size="lg" 
+                  className="flex-1 bg-gradient-to-r from-accent to-accent/80 rounded-xl shadow-md" 
+                  onClick={handleCloseSuccess}
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Tạo đơn mới
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
