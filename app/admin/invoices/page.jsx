@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Search, FileText, Printer, Eye, Calendar, Filter, Loader2, AlertCircle, CreditCard, Users } from "lucide-react";
+import { Search, FileText, Printer, Eye, Filter, Loader2, AlertCircle, CreditCard, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -35,6 +35,8 @@ function mapDonHang(d) {
     paymentMethod: d.hinhThuc ? "Chuyển khoản" : "Tiền mặt",
     status: statusMap[d.trangThaiThanhToan] ?? "pending",
     createdBy: d.tenNguoiTao,
+    itemCount: d.chiTietHoaDonDtos?.length ?? 0,
+    chiTiet: d.chiTietHoaDonDtos ?? [],
   };
 }
 
@@ -86,15 +88,20 @@ export default function InvoicesPage() {
     usePagination(filteredInvoices, 10);
 
   const totalRevenue    = invoices.filter((i) => i.status === "completed").reduce((s, i) => s + i.total, 0);
-  const pendingAmount   = invoices.filter((i) => i.status === "pending").reduce((s, i) => s + (i.total - i.amountPaid), 0);
-  const totalInvoices   = invoices.length;
   const pendingInvoices = invoices.filter((i) => i.status === "pending").length;
   const partialInvoices = invoices.filter((i) => i.status === "partial").length;
+  const totalInvoices   = invoices.length;
 
   const handleViewInvoice = (invoice) => {
     setSelectedInvoice(invoice);
     setDrawerOpen(true);
   };
+
+  const handlePrintInvoice = (invoice) => {
+  setSelectedInvoice(invoice);
+  setDrawerOpen(true);
+  setTimeout(() => window.print(), 300); // chờ drawer render xong
+};
 
   if (loading) return (
     <div className="flex h-96 items-center justify-center gap-3 text-muted-foreground">
@@ -126,9 +133,9 @@ export default function InvoicesPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { icon: FileText, label: "Tổng hoá đơn", value: totalInvoices, bg: "bg-primary/10", color: "text-primary" },
-          { icon: Users, label: "Chưa / Còn nợ", value: pendingInvoices + partialInvoices, bg: "bg-amber-100", color: "text-amber-700" },
-          { icon: CreditCard, label: "Doanh thu", value: formatCurrency(totalRevenue), bg: "bg-emerald-100", color: "text-emerald-700" },
+          { icon: FileText,  label: "Tổng hoá đơn",  value: totalInvoices,                       bg: "bg-primary/10",   color: "text-primary" },
+          { icon: Users,     label: "Chưa / Còn nợ", value: pendingInvoices + partialInvoices,   bg: "bg-amber-100",    color: "text-amber-700" },
+          { icon: CreditCard,label: "Doanh thu",      value: formatCurrency(totalRevenue),        bg: "bg-emerald-100",  color: "text-emerald-700" },
         ].map(({ icon: Icon, label, value, bg, color }) => (
           <Card key={label} className="border-0 shadow-sm">
             <CardContent className="p-5">
@@ -179,6 +186,7 @@ export default function InvoicesPage() {
           <TableHeader>
             <TableRow className="bg-muted/40 hover:bg-muted/40">
               <TableHead>Mã HD</TableHead>
+              <TableHead className="text-center">SL SP</TableHead>
               <TableHead>Mã khách hàng</TableHead>
               <TableHead>Tên khách hàng</TableHead>
               <TableHead className="text-right">Tổng tiền</TableHead>
@@ -192,7 +200,7 @@ export default function InvoicesPage() {
           <TableBody>
             {filteredInvoices.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-40 text-center">
+                <TableCell colSpan={10} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <FileText className="h-8 w-8 opacity-40" />
                     <p className="text-sm">Không tìm thấy hoá đơn</p>
@@ -202,12 +210,17 @@ export default function InvoicesPage() {
             ) : paginatedItems.map((invoice) => {
               const remainingDebt = invoice.total - invoice.amountPaid;
               return (
-                <TableRow 
-                  key={invoice.id} 
+                <TableRow
+                  key={invoice.id}
                   className="cursor-pointer transition-colors hover:bg-muted/40"
                   onClick={() => handleViewInvoice(invoice)}
                 >
                   <TableCell className="font-semibold">{invoice.id}</TableCell>
+                  <TableCell className="text-center">
+                    <span className="inline-flex items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                      {invoice.itemCount}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{invoice.customerCode}</TableCell>
                   <TableCell className="font-medium">{invoice.customer}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">
@@ -241,7 +254,7 @@ export default function InvoicesPage() {
                         <Eye className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8"
-                        onClick={() => window.print()}>
+                        onClick={() => handlePrintInvoice(invoice)}>
                         <Printer className="h-4 w-4" />
                       </Button>
                     </div>
@@ -270,8 +283,10 @@ export default function InvoicesPage() {
               Chi tiết hoá đơn {selectedInvoice?.id}
             </SheetTitle>
           </SheetHeader>
+
           {selectedInvoice && (
             <div className="mt-6 space-y-6">
+
               {/* Thông tin khách hàng */}
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -285,6 +300,31 @@ export default function InvoicesPage() {
                   <p className="font-semibold">{selectedInvoice.customer}</p>
                 </div>
               </div>
+
+              {/* Chi tiết sản phẩm */}
+              {selectedInvoice.chiTiet.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    Chi tiết sản phẩm ({selectedInvoice.chiTiet.length})
+                  </h3>
+                  <div className="rounded-xl border bg-muted/20 divide-y text-sm">
+                    {selectedInvoice.chiTiet.map((item, idx) => (
+                      <div key={idx} className="p-3 space-y-1">
+                        <p className="font-medium">{item.tenSanPham}</p>
+                        <div className="flex justify-between text-muted-foreground">
+                          <span>
+                            {item.soLuong} {item.donViTinh} × {formatCurrency(item.donGia)}
+                          </span>
+                          <span className="font-semibold text-foreground tabular-nums">
+                            {formatCurrency(item.thanhTien)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Chi tiết thanh toán */}
               <div className="space-y-3">
@@ -340,6 +380,7 @@ export default function InvoicesPage() {
                 <Printer className="h-4 w-4" />
                 In hoá đơn
               </Button>
+
             </div>
           )}
         </SheetContent>
