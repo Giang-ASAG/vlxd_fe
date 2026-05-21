@@ -15,8 +15,18 @@ function formatPercentChange(value) {
 }
 
 function formatCurrency(value) {
-    if (value >= 1_000_000) return (value / 1_000_000).toFixed(1) + " Triệu";
-    if (value >= 1_000) return (value / 1_000).toFixed(1) + " Ngàn";
+    const format = (num, unit) =>
+        parseFloat(num.toFixed(1)).toString().replace(".", ",") + " " + unit;
+
+    if (value >= 1_000_000_000)
+        return format(value / 1_000_000_000, "Tỷ");
+
+    if (value >= 1_000_000)
+        return format(value / 1_000_000, "Triệu");
+
+    if (value >= 1_000)
+        return format(value / 1_000, "Ngàn");
+
     return value.toString();
 }
 
