@@ -25,6 +25,7 @@ import {
   CongNoNccService,
   LichSuThanhToanService,
   PurchaseOrderService,
+  ProductService,
 } from "@/src/services/api-services";
 import * as XLSX from 'xlsx';
 
@@ -68,29 +69,36 @@ function Toast({ message, type, onClose }) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { tenNcc: "", soDienThoai: "", email: "", diaChi: "", ghiChu: "" };
+const EMPTY_FORM = { tenNcc: "", soDienThoai: "", email: "", diaChi: "", ghiChu: "", selectedProductIds: [] };
 const EMPTY_PAY_DIALOG = { open: false, items: [], amount: "", method: "Chuyển khoản", note: "" };
 const PAYMENT_METHODS = ["Chuyển khoản", "Tiền mặt"];
 
-const TRANG_THAI_NO_LABEL  = { dang_no: "Đang nợ", da_thanh_toan: "Đã TT", cho_xu_ly: "Chờ xử lý" };
+const TRANG_THAI_NO_LABEL = { dang_no: "Đang nợ", da_thanh_toan: "Đã TT", cho_xu_ly: "Chờ xử lý" };
 const TRANG_THAI_NHAP_LABEL = { cho_nhap: "Chờ nhập", da_nhap_kho: "Đã nhập kho" };
-const TRANG_THAI_NO_COLOR  = {
-  dang_no:       "bg-destructive/10 text-destructive border-destructive/20",
+const TRANG_THAI_NO_COLOR = {
+  dang_no: "bg-destructive/10 text-destructive border-destructive/20",
   da_thanh_toan: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  cho_xu_ly:     "bg-amber-100 text-amber-700 border-amber-200",
+  cho_xu_ly: "bg-amber-100 text-amber-700 border-amber-200",
 };
 const TRANG_THAI_NHAP_COLOR = {
-  cho_nhap:    "bg-muted text-muted-foreground border-muted",
+  cho_nhap: "bg-muted text-muted-foreground border-muted",
   da_nhap_kho: "bg-blue-100 text-blue-700 border-blue-200",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toNumber(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
-function toText(v)   { return v == null ? "" : String(v); }
+function toText(v) { return v == null ? "" : String(v); }
 
 function createFormData(s) {
-  return { tenNcc: s?.name ?? "", soDienThoai: s?.phone ?? "", email: s?.email ?? "", diaChi: s?.address ?? "", ghiChu: s?.ghiChu ?? "" };
+  return {
+    tenNcc: s?.name ?? "",
+    soDienThoai: s?.phone ?? "",
+    email: s?.email ?? "",
+    diaChi: s?.address ?? "",
+    ghiChu: s?.ghiChu ?? "",
+    selectedProductIds: s?.selectedProductIds ?? [],
+  };
 }
 
 function formatCurrencyVN(amount) {
@@ -128,17 +136,135 @@ function getPurchaseOrderProductNames(order) {
   const uniqueNames = [...new Set(names)];
   return uniqueNames.slice(0, 3).join(", ") + (uniqueNames.length > 3 ? ` +${uniqueNames.length - 3}...` : "");
 }
+// ─── Supplier Products Tab ────────────────────────────────────────────────────
 
+function SupplierProductsTab({ supplierId }) {
+  const [products, setProducts] = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [fetchError, setFetchError] = useState(null);
+
+  useEffect(() => {
+    if (!supplierId) return;
+    setLoading(true);
+    setFetchError(null);
+
+    const fetchFn = ProductService.getBySupplierId ?? ProductService.getBySupplier ?? ProductService.getBySupplierId;
+    
+    if (!fetchFn) {
+      setFetchError("ProductService.getBySupplierId chưa được định nghĩa trong api-services.");
+      setLoading(false);
+      return;
+    }
+
+    fetchFn(supplierId)
+      .then((res) => setProducts(res?.data ?? []))
+      .catch((err) => {
+        setFetchError(err?.message ?? "Lỗi không xác định khi tải sản phẩm.");
+        setProducts([]);
+      })
+      .finally(() => setLoading(false));
+  }, [supplierId]);
+
+  const list = products ?? [];
+
+  if (fetchError) return (
+    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+      <AlertCircle className="mx-auto mb-2 h-6 w-6 text-destructive" />
+      <p className="text-sm font-medium text-destructive">Lỗi tải sản phẩm</p>
+      <p className="mt-1 text-xs text-muted-foreground">{fetchError}</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 rounded-xl border bg-background p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Sản phẩm của nhà cung cấp</h3>
+          <p className="text-xs text-muted-foreground">Các sản phẩm mà NCC này cung cấp</p>
+        </div>
+        {!loading && <Badge variant="secondary" className="text-xs">{list.length} sản phẩm</Badge>}
+      </div>
+
+      {loading ? (
+        <div className="flex h-24 items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-sm">Đang tải...</span>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
+                <TableHead>Mã SKU</TableHead>
+                <TableHead>Tên sản phẩm</TableHead>
+                <TableHead>Đơn vị</TableHead>
+                <TableHead className="text-right">Giá nhập</TableHead>
+                <TableHead className="text-right">Giá bán lẻ</TableHead>
+                <TableHead className="text-right">Tồn kho</TableHead>
+                <TableHead className="text-right">Tồn tối thiểu</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {list.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-20 text-center text-sm text-muted-foreground">
+                    Chưa có sản phẩm nào được liên kết
+                  </TableCell>
+                </TableRow>
+              ) : list.map((p) => (
+                <TableRow key={p.maSanPham} className="text-sm hover:bg-muted/30">
+                  <TableCell>
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{p.maSku}</span>
+                  </TableCell>
+                  <TableCell className="font-medium">{p.tenSanPham}</TableCell>
+                  <TableCell className="text-muted-foreground">{p.donViChinh}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(p.giaNhapGanNhat)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(p.giaBanLe)}</TableCell>
+                  <TableCell className="text-right">
+                    <span className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+                      p.soLuong <= p.tonKhoToiThieu
+                        ? "bg-destructive/10 text-destructive"
+                        : "bg-emerald-100 text-emerald-700"
+                    )}>
+                      {p.soLuong} {p.donViChinh}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums">
+                    {p.tonKhoToiThieu}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {list.length > 0 && (
+        <div className="rounded-lg bg-muted/20 px-4 py-2.5">
+          {list.filter((p) => p.soLuong <= p.tonKhoToiThieu).length > 0 && (
+            <span className="flex items-center gap-1 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {list.filter((p) => p.soLuong <= p.tonKhoToiThieu).length} sản phẩm dưới mức tồn tối thiểu
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function SupplierStatsStrip({ supplier }) {
   const items = [
-    { icon: Phone,      label: "Số điện thoại",    value: supplier.phone || "--",              color: "text-blue-500",    bg: "bg-blue-50 dark:bg-blue-950/30" },
-    { icon: Mail,       label: "Email",             value: supplier.email || "--",              color: "text-primary",     bg: "bg-primary/5" },
-    { icon: MapPin,     label: "Địa chỉ",           value: supplier.address || "--",            color: "text-muted-foreground", bg: "bg-muted/40" },
-    { icon: CreditCard, label: "Công nợ hiện tại",  value: formatCurrencyVN(supplier.debt),
+    { icon: Phone, label: "Số điện thoại", value: supplier.phone || "--", color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-950/30" },
+    { icon: Mail, label: "Email", value: supplier.email || "--", color: "text-primary", bg: "bg-primary/5" },
+    { icon: MapPin, label: "Địa chỉ", value: supplier.address || "--", color: "text-muted-foreground", bg: "bg-muted/40" },
+    {
+      icon: CreditCard, label: "Công nợ hiện tại", value: formatCurrencyVN(supplier.debt),
       color: toNumber(supplier.debt) > 0 ? "text-destructive" : "text-muted-foreground",
-      bg:    toNumber(supplier.debt) > 0 ? "bg-destructive/5"  : "bg-muted/40" },
+      bg: toNumber(supplier.debt) > 0 ? "bg-destructive/5" : "bg-muted/40"
+    },
   ];
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -157,11 +283,164 @@ function SupplierStatsStrip({ supplier }) {
 
 function StatusBadge({ value, labelMap, colorMap }) {
   const label = labelMap[value] ?? value;
-  const cls   = colorMap?.[value] ?? "bg-muted text-muted-foreground border-muted";
+  const cls = colorMap?.[value] ?? "bg-muted text-muted-foreground border-muted";
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", cls)}>
       {label}
     </span>
+  );
+}
+
+// ─── Product Picker Field ─────────────────────────────────────────────────────
+
+function ProductPickerField({ allProducts, selectedIds, onChange, loading }) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch("");
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filtered = allProducts.filter((p) =>
+    p.tenSanPham.toLowerCase().includes(search.toLowerCase()) ||
+    p.maSku?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectedProducts = allProducts.filter((p) => selectedIds.includes(p.maSanPham));
+
+  const toggle = (id) => {
+    onChange(
+      selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id]
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      {/* Dropdown trigger */}
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => setOpen((p) => !p)}
+          className={cn(
+            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors",
+            "hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring",
+            open && "border-primary ring-2 ring-ring"
+          )}
+        >
+          <span className={selectedIds.length === 0 ? "text-muted-foreground" : "font-medium"}>
+            {selectedIds.length === 0
+              ? "Chọn sản phẩm cung cấp..."
+              : `${selectedIds.length} sản phẩm đã chọn`}
+          </span>
+          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        </button>
+
+        {open && (
+          <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border bg-popover shadow-lg">
+            {/* Search */}
+            <div className="border-b p-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Tìm sản phẩm..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="max-h-56 overflow-y-auto">
+              {loading ? (
+                <div className="flex h-16 items-center justify-center gap-2 text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-xs">Đang tải...</span>
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">Không tìm thấy sản phẩm</div>
+              ) : filtered.map((p) => {
+                const checked = selectedIds.includes(p.maSanPham);
+                return (
+                  <button
+                    key={p.maSanPham}
+                    type="button"
+                    onClick={() => toggle(p.maSanPham)}
+                    className={cn(
+                      "flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/50",
+                      checked && "bg-primary/5"
+                    )}
+                  >
+                    <div className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                      checked ? "border-primary bg-primary" : "border-input"
+                    )}>
+                      {checked && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{p.tenSanPham}</p>
+                      <p className="text-muted-foreground">{p.maSku} · {p.donViChinh}</p>
+                    </div>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {formatCurrencyVN(p.giaNhapGanNhat)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            {filtered.length > 0 && (
+              <div className="flex items-center justify-between border-t bg-muted/20 px-3 py-2">
+                <span className="text-xs text-muted-foreground">{selectedIds.length} đã chọn</span>
+                {selectedIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onChange([])}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    Bỏ chọn tất cả
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Selected chips */}
+      {selectedProducts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selectedProducts.map((p) => (
+            <span
+              key={p.maSanPham}
+              className="inline-flex items-center gap-1 rounded-full border bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary"
+            >
+              {p.tenSanPham}
+              <button
+                type="button"
+                onClick={() => toggle(p.maSanPham)}
+                className="ml-0.5 rounded-full hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -410,8 +689,8 @@ function ImportDialog({ isOpen, onClose, onImport, isImporting }) {
 
 function PaymentDialog({ dialog, isSubmitting, onChange, onConfirm, onClose }) {
   if (!dialog.open) return null;
-  const isBulk   = dialog.items.length > 1;
-  const total    = dialog.items.reduce((s, x) => s + toNumber(x.soTienNo), 0);
+  const isBulk = dialog.items.length > 1;
+  const total = dialog.items.reduce((s, x) => s + toNumber(x.soTienNo), 0);
   const subtitle = isBulk
     ? `${dialog.items.length} khoản nợ · Tổng ${formatCurrencyVN(total)}`
     : `Phiếu PN${String(dialog.items[0]?.maPhieuNhap ?? "").padStart(4, "0")} · Nợ ${formatCurrencyVN(dialog.items[0]?.soTienNo)}`;
@@ -486,39 +765,54 @@ function PaymentDialog({ dialog, isSubmitting, onChange, onConfirm, onClose }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SuppliersPage() {
-  const [suppliers, setSuppliers]           = useState([]);
-  const [search, setSearch]                 = useState("");
-  const [addFormOpen, setAddFormOpen]       = useState(false);
-  const [expandedId, setExpandedId]         = useState(null);
-  const [formData, setFormData]             = useState(EMPTY_FORM);
-  const [loading, setLoading]               = useState(true);
-  const [error, setError]                   = useState(null);
-  const [isSubmitting, setIsSubmitting]     = useState(false);
-  const [congNoData, setCongNoData]         = useState({});
-  const [congNoLoading, setCongNoLoading]   = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [search, setSearch] = useState("");
+  const [addFormOpen, setAddFormOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
+  const [formData, setFormData] = useState(EMPTY_FORM);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [congNoData, setCongNoData] = useState({});
+  const [congNoLoading, setCongNoLoading] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState({});
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
   const [purchaseHistory, setPurchaseHistory] = useState({});
   const [purchaseHistoryLoading, setPurchaseHistoryLoading] = useState(false);
-  const [payDialog, setPayDialog]           = useState(EMPTY_PAY_DIALOG);
-  
+  const [payDialog, setPayDialog] = useState(EMPTY_PAY_DIALOG);
+
   // Import states
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  
+
   // Toast states
   const [toast, setToast] = useState(null);
 
   const showToast = (message, type = "success") => {
     setToast({ message, type });
   };
-
+  // Thêm vào sau const [purchaseHistoryLoading, ...]
+  const [allProducts, setAllProducts] = useState([]);
+  const [allProductsLoading, setAllProductsLoading] = useState(false);
+  // Trong formData, thêm selectedProductIds
   // ─── API ────────────────────────────────────────────────────────────────────
+  const fetchAllProducts = async () => {
+    if (allProducts.length > 0) return;
+    setAllProductsLoading(true);
+    try {
+      const res = await ProductService.getAll();
+      setAllProducts(res?.data ?? []);
+    } catch {
+      setAllProducts([]);
+    } finally {
+      setAllProductsLoading(false);
+    }
+  };
 
   const fetchSuppliers = async () => {
     try {
       setLoading(true);
-      const result  = await SupplierService.getAll();
+      const result = await SupplierService.getAll();
       const apiData = result.data;
       if (!apiData || !Array.isArray(apiData)) throw new Error("Invalid data format");
       setSuppliers(apiData.map((item) => {
@@ -575,7 +869,7 @@ export default function SuppliersPage() {
     finally { setPurchaseHistoryLoading(false); }
   };
 
-  const invalidateCongNo       = (id) => setCongNoData((p)      => { const n = { ...p }; delete n[id]; return n; });
+  const invalidateCongNo = (id) => setCongNoData((p) => { const n = { ...p }; delete n[id]; return n; });
   const invalidatePaymentHistory = (id) => setPaymentHistory((p) => { const n = { ...p }; delete n[id]; return n; });
 
   useEffect(() => { fetchSuppliers(); }, []);
@@ -594,6 +888,7 @@ export default function SuppliersPage() {
     if (expandedId === supplier.id) { setExpandedId(null); resetForm(); return; }
     setExpandedId(supplier.id);
     setFormData(createFormData(supplier));
+    fetchAllProducts(); // ← THÊM
   };
 
   const handleSaveNewSupplier = async (e) => {
@@ -608,7 +903,7 @@ export default function SuppliersPage() {
       resetForm();
       setAddFormOpen(false);
       showToast(`✅ Thêm nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
-    } catch (err) { 
+    } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
     finally { setIsSubmitting(false); }
@@ -627,7 +922,7 @@ export default function SuppliersPage() {
       setExpandedId(null);
       resetForm();
       showToast(`✅ Cập nhật nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
-    } catch (err) { 
+    } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
     finally { setIsSubmitting(false); }
@@ -646,7 +941,7 @@ export default function SuppliersPage() {
       const msg = err.message || "";
       if (msg.includes("ràng buộc") || msg.includes("constraint") || msg.includes("foreign") || msg.includes("related")) {
         showToast(`⚠️ Không thể xóa nhà cung cấp "${supplierName}" vì có dữ liệu liên quan trong hệ thống!`, "warning");
-      } else { 
+      } else {
         showToast(`❌ Lỗi: ${msg}`, "error");
       }
     } finally { setIsSubmitting(false); }
@@ -665,7 +960,7 @@ export default function SuppliersPage() {
     try {
       const existingSuppliers = await SupplierService.getAll();
       const existingSupplierNames = new Set();
-      
+
       if (existingSuppliers?.data) {
         existingSuppliers.data.forEach(supplier => {
           if (supplier.tenNcc) {
@@ -676,7 +971,7 @@ export default function SuppliersPage() {
 
       for (const supplier of importData) {
         const isDuplicate = existingSupplierNames.has(supplier.tenNcc.toLowerCase().trim());
-        
+
         if (isDuplicate) {
           duplicateCount++;
           duplicates.push(supplier.tenNcc);
@@ -702,18 +997,18 @@ export default function SuppliersPage() {
 
       await fetchSuppliers();
       setImportDialogOpen(false);
-      
+
       let message = `📊 KẾT QUẢ IMPORT\n\n`;
       message += `✅ Thành công: ${successCount} nhà cung cấp\n`;
       message += `⚠️ Trùng lặp: ${duplicateCount} nhà cung cấp\n`;
       message += `❌ Thất bại: ${errorCount} nhà cung cấp\n`;
       message += `📝 Tổng số: ${importData.length} nhà cung cấp\n`;
-      
+
       if (duplicates.length > 0) {
         message += `\n🔁 Danh sách trùng: ${duplicates.slice(0, 5).join(", ")}`;
         if (duplicates.length > 5) message += `... và ${duplicates.length - 5} nhà cung cấp khác`;
       }
-      
+
       showToast(message, successCount > 0 ? "success" : "warning");
     } catch (err) {
       showToast(`❌ Lỗi khi import: ${err.message}`, "error");
@@ -722,25 +1017,26 @@ export default function SuppliersPage() {
     }
   };
 
+
   // ─── Payment ──────────────────────────────────────────────────────────────────
 
   const openPayDialog = (items, defaultAmount = "") =>
     setPayDialog({ open: true, items, amount: String(defaultAmount), method: "Chuyển khoản", note: "" });
-  const closePayDialog  = () => setPayDialog(EMPTY_PAY_DIALOG);
+  const closePayDialog = () => setPayDialog(EMPTY_PAY_DIALOG);
   const updatePayDialog = (field, value) => setPayDialog((p) => ({ ...p, [field]: value }));
 
   const handleConfirmPay = async () => {
     const amount = toNumber(payDialog.amount);
-    if (amount <= 0) { 
+    if (amount <= 0) {
       showToast("Vui lòng nhập số tiền hợp lệ.", "warning");
-      return; 
+      return;
     }
 
-    const items     = payDialog.items;
+    const items = payDialog.items;
     const totalDebt = items.reduce((sum, x) => sum + toNumber(x.soTienNo), 0);
-    if (amount > totalDebt) { 
+    if (amount > totalDebt) {
       showToast("Số tiền không được vượt quá tổng nợ.", "warning");
-      return; 
+      return;
     }
 
     const isBulk = items.length > 1;
@@ -777,9 +1073,9 @@ export default function SuppliersPage() {
     }
 
     paymentRecords = paymentRecords.filter((r) => r.soTien > 0);
-    if (!paymentRecords.length) { 
+    if (!paymentRecords.length) {
       showToast("Không có khoản thanh toán hợp lệ.", "warning");
-      return; 
+      return;
     }
 
     try {
@@ -791,7 +1087,7 @@ export default function SuppliersPage() {
       await fetchSuppliers();
       closePayDialog();
       showToast(`✅ Thanh toán thành công ${formatCurrencyVN(amount)}!`, "success");
-    } catch (err) { 
+    } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
     finally { setIsSubmitting(false); }
@@ -824,6 +1120,15 @@ export default function SuppliersPage() {
             <Label className="text-sm font-medium">Địa chỉ</Label>
             <Input value={formData.diaChi} onChange={(e) => updateFormField("diaChi", e.target.value)}
               placeholder="Nhập địa chỉ" className="h-10" />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label className="text-sm font-medium">Sản phẩm cung cấp</Label>
+            <ProductPickerField
+              allProducts={allProducts}
+              selectedIds={formData.selectedProductIds}
+              onChange={(ids) => updateFormField("selectedProductIds", ids)}
+              loading={allProductsLoading}
+            />
           </div>
           <div className="space-y-1.5 md:col-span-2">
             <Label className="text-sm font-medium">Ghi chú</Label>
@@ -866,7 +1171,7 @@ export default function SuppliersPage() {
   const { currentPage, totalPages, paginatedItems, goToPage, pageSize, setPageSize, totalItems } =
     usePagination(filteredSuppliers, 10);
 
-  const totalDebt     = suppliers.reduce((s, x) => s + toNumber(x.debt), 0);
+  const totalDebt = suppliers.reduce((s, x) => s + toNumber(x.debt), 0);
   const totalPurchase = suppliers.reduce((s, x) => s + toNumber(x.totalPurchase), 0);
 
   if (loading) return (
@@ -918,9 +1223,9 @@ export default function SuppliersPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { icon: Building2, label: "Tổng nhà cung cấp", value: suppliers.length,               bg: "bg-primary/10",     color: "text-primary" },
-          { icon: Truck,     label: "Tổng mua",           value: formatCurrencyVN(totalPurchase), bg: "bg-accent/10",      color: "text-accent" },
-          { icon: CreditCard,label: "Nợ cần trả",         value: formatCurrencyVN(totalDebt),     bg: "bg-destructive/10", color: "text-destructive" },
+          { icon: Building2, label: "Tổng nhà cung cấp", value: suppliers.length, bg: "bg-primary/10", color: "text-primary" },
+          { icon: Truck, label: "Tổng mua", value: formatCurrencyVN(totalPurchase), bg: "bg-accent/10", color: "text-accent" },
+          { icon: CreditCard, label: "Nợ cần trả", value: formatCurrencyVN(totalDebt), bg: "bg-destructive/10", color: "text-destructive" },
         ].map(({ icon: Icon, label, value, bg, color }) => (
           <Card key={label} className="border-0 shadow-sm">
             <CardContent className="p-5">
@@ -945,7 +1250,7 @@ export default function SuppliersPage() {
           value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
       </div>
 
-      {/* Add Form */}
+      {/* Thêm nhà cung cấp */}
       {addFormOpen && (
         <Card className="border-dashed shadow-sm">
           <CardContent className="p-6">
@@ -955,7 +1260,7 @@ export default function SuppliersPage() {
         </Card>
       )}
 
-      {/* Table */}
+      {/* Bảng */}
       <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -1053,6 +1358,9 @@ export default function SuppliersPage() {
                               <TabsTrigger value="payment-history" className="gap-1.5 rounded-md px-4 text-xs">
                                 <CreditCard className="h-3.5 w-3.5" /> Lịch sử TT
                               </TabsTrigger>
+                              <TabsTrigger value="san-pham" className="gap-1.5 rounded-md px-4 text-xs">
+                                <Building2 className="h-3.5 w-3.5" /> Sản phẩm
+                              </TabsTrigger>
                             </TabsList>
 
                             <TabsContent value="supplier-info" className="mt-4 space-y-4">
@@ -1062,6 +1370,13 @@ export default function SuppliersPage() {
                                   {renderSupplierForm("edit", supplier)}
                                 </CardContent>
                               </Card>
+                            </TabsContent>
+                            <TabsContent value="san-pham" className="mt-4">
+                              <SupplierProductsTab
+                                supplierId={supplier.id}
+                                allProducts={allProducts}
+                                allProductsLoading={allProductsLoading}
+                              />
                             </TabsContent>
 
                             <TabsContent value="cong-no" className="mt-4">
@@ -1116,7 +1431,7 @@ export default function SuppliersPage() {
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
                                                 {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}
-                                               <TableCell>{item.tenKhoNhap}</TableCell>
+                                                <TableCell>{item.tenKhoNhap}</TableCell>
                                                 <TableCell>{item.tenNguoiLap}</TableCell>
                                                 <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrencyVN(item.daThanhToanNcc)}</TableCell>
@@ -1298,7 +1613,7 @@ export default function SuppliersPage() {
                                                 <TableCell className="font-medium">
                                                   PN{String(item.maPhieu).padStart(4, "0")}
                                                 </TableCell>
-                                                  <TableCell className="text-muted-foreground">
+                                                <TableCell className="text-muted-foreground">
                                                   {new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
                                                 {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}

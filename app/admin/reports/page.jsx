@@ -87,9 +87,9 @@ function buildPeriods(from, to, groupBy) {
 function calculateLeafValues(node, periods, groupBy) {
   if (!node.base) return {};
   let factor = 1;
-  if(groupBy === "day") factor = 1 / 30;
-  if(groupBy === "quarter") factor = 3;
-  if(groupBy === "year") factor = 12;
+  if (groupBy === "day") factor = 1 / 30;
+  if (groupBy === "quarter") factor = 3;
+  if (groupBy === "year") factor = 12;
 
   return periods.reduce((acc, p, i) => {
     acc[p.key] = Math.round(node.base * factor * seededFactor(node.id + p.key, i));
@@ -163,7 +163,7 @@ export default function FinancialReportPage() {
 
   const rangeSummary = useMemo(() => {
     if (!range.from || !range.to) return "Chọn khoảng thời gian";
-    return `${format(range.from, "dd MMM yyyy")} - ${format(range.to, "dd MMM yyyy")}`;
+    return `${format(range.from, "dd/MM/yyyy")} - ${format(range.to, "dd/MM/yyyy")}`;
   }, [range]);
 
   useEffect(() => {
@@ -242,6 +242,7 @@ export default function FinancialReportPage() {
     if (!range.from || !range.to) return;
 
     const periodText = `${format(range.from, "dd/MM/yyyy")} - ${format(range.to, "dd/MM/yyyy")}`;
+    console.log("Test format:", periodText);
     const generatedAt = format(new Date(), "dd/MM/yyyy HH:mm");
     const numberFormat = currency === "VND" ? "#,##0;[Red]-#,##0" : "#,##0.00;[Red]-#,##0.00";
 
@@ -346,14 +347,14 @@ export default function FinancialReportPage() {
       }
       const startRow = 6;
       const endRow = ws.rowCount;
-      
+
       for (let r = startRow; r <= endRow; r++) {
         ws.getCell(r, 1).alignment = {
           horizontal: "left",
           vertical: "middle",
           wrapText: true,
         };
-      
+
         for (let c = 2; c <= totalCols; c++) {
           ws.getCell(r, c).alignment = {
             horizontal: "right",
@@ -380,7 +381,7 @@ export default function FinancialReportPage() {
     link(4, "Xem theo tháng", sheetName("month"));
     link(5, "Xem theo quý", sheetName("quarter"));
     link(6, "Xem theo năm", sheetName("year"));
-    
+
     addReportSheet("day", dayReport);
     addReportSheet("month", monthReport);
     addReportSheet("quarter", quarterReport);
@@ -459,7 +460,7 @@ export default function FinancialReportPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">{label}</p>
-                  <p className="text-2xl font-bold truncate">{value}</p>
+                  <p className="text-xl font-bold truncate">{value}</p>
                 </div>
               </div>
             </CardContent>
@@ -473,11 +474,11 @@ export default function FinancialReportPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input 
-                value={search} 
-                onChange={(e) => setSearch(e.target.value)} 
-                placeholder="Tìm kiếm chỉ tiêu..." 
-                className="pl-9 h-10" 
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Tìm kiếm chỉ tiêu..."
+                className="pl-9 h-10"
               />
             </div>
 
@@ -489,12 +490,12 @@ export default function FinancialReportPage() {
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-2">
-                <Calendar 
-                  mode="range" 
-                  selected={range} 
-                  onSelect={onRangeSelect} 
-                  numberOfMonths={2} 
-                  disabled={{ after: today }} 
+                <Calendar
+                  mode="range"
+                  selected={range}
+                  onSelect={onRangeSelect}
+                  numberOfMonths={2}
+                  disabled={{ after: today }}
                 />
               </PopoverContent>
             </Popover>
@@ -625,8 +626,8 @@ export default function FinancialReportPage() {
                                 onClick={() => setExpanded((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
                                 className="rounded p-0.5 hover:bg-muted transition-colors"
                               >
-                                {expanded[row.id] ? 
-                                  <ChevronDown className="h-4 w-4 text-muted-foreground" /> : 
+                                {expanded[row.id] ?
+                                  <ChevronDown className="h-4 w-4 text-muted-foreground" /> :
                                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                 }
                               </button>

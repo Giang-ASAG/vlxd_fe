@@ -25,6 +25,8 @@ export const ProductService = {
    * Xóa sản phẩm
    */
   delete: (id) => api.delete(`/SanPhams/${id}`),
+
+  getBySupplierId: (id) => api.get(`/SanPhams/getSanPhambyNCC/${id}`),
 };
 
 export const CategoryService = {
