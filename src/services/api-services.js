@@ -170,7 +170,7 @@ export const SupplierService = {
   /**
    * Cập nhật nhà cung cấp
    */
-  update: (id, data) => api.put(`/NhaCungCaps/${id}`, { maNcc: id, ...data }),
+  update: (id, data) => api.put(`/NhaCungCaps/${id}`, data),
 
   /**
    * Xóa nhà cung cấp
