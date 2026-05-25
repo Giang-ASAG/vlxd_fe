@@ -196,7 +196,7 @@ const EMPTY_FORM = {
   tonKhoToiThieu: "0",
   tonKhoToiDa: "999999999",
   unit: "",
-  maNccMacDinh: "",
+  maNccMacDinh: "1",
 };
 
 // Units management dialog (top-level component)
@@ -1057,7 +1057,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     if (!form.name.trim()) errors.push("Tên hàng hóa không được để trống");
     if (isCreate && !form.sku.trim()) errors.push("Mã SKU không được để trống");
     if (isBlank(form.maDanhMuc)) errors.push("Nhóm hàng không được để trống");
-    if (isCreate && isBlank(form.maNccMacDinh)) errors.push("Nhà cung cấp mặc định không được để trống");
+    // if (isCreate && isBlank(form.maNccMacDinh)) errors.push("Nhà cung cấp mặc định không được để trống");
     if (!trimUnit(form.unit)) errors.push("Đơn vị tính không được để trống");
     if (isCreate && isBlank(form.cost)) errors.push("Giá vốn không được để trống");
     if (isBlank(form.priceBeforeTax)) errors.push("Giá bán trước thuế không được để trống");
@@ -1199,7 +1199,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5 md:col-span-2">
+                {/* <div className="space-y-1.5 md:col-span-2">
                   <Label className="text-sm font-medium">Nhà cung cấp mặc định{!product ? " *" : ""}</Label>
                   <Select key={`ncc-${selectInstanceKey}-${form.maNccMacDinh}`} value={form.maNccMacDinh ? form.maNccMacDinh : undefined} onValueChange={(v) => setForm((p) => ({ ...p, maNccMacDinh: v }))}>
                     <SelectTrigger className="h-10">
@@ -1214,7 +1214,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                       )}
                     </SelectContent>
                   </Select>
-                </div>
+                </div> */}
               </div>
             </AccordionContent>
           </AccordionItem>
