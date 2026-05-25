@@ -37,6 +37,77 @@ export const CategoryService = {
    * Tạo danh mục mới
    */
   create: (data) => api.post("/DanhMucs", data),
+
+  /**
+   * Cập nhật danh mục
+   */
+  update: (id, data) => api.put(`/DanhMucs/${id}`, data),
+
+  /**
+   * Xóa danh mục
+   */
+  delete: (id) => api.delete(`/DanhMucs/${id}`),
+};
+
+const UNIT_STORAGE_KEY = "vlxd_units";
+const DEFAULT_UNITS = [
+  "Bao",
+  "Cây",
+  "Viên",
+  "Khối",
+  "Thùng",
+  "Cuộn",
+  "Cái",
+  "Mét",
+  "M3",
+  "Tờ",
+  "Lon",
+];
+
+function loadUnits() {
+  if (typeof window === "undefined") return DEFAULT_UNITS;
+  const raw = window.localStorage.getItem(UNIT_STORAGE_KEY);
+  if (!raw) return DEFAULT_UNITS;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length ? parsed : DEFAULT_UNITS;
+  } catch {
+    return DEFAULT_UNITS;
+  }
+}
+
+function saveUnits(units) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(UNIT_STORAGE_KEY, JSON.stringify(units));
+  }
+  return units;
+}
+
+export const UnitService = {
+  getAll: () => Promise.resolve({ data: loadUnits() }),
+  create: (unit) => {
+    const normalized = String(unit || "").trim();
+    if (!normalized) return Promise.reject(new Error("Đơn vị tính không được để trống"));
+    const units = loadUnits();
+    if (units.includes(normalized)) return Promise.reject(new Error("Đơn vị tính đã tồn tại"));
+    const next = [...units, normalized];
+    return Promise.resolve({ data: saveUnits(next) });
+  },
+  update: (oldUnit, newUnit) => {
+    const normalizedNew = String(newUnit || "").trim();
+    if (!normalizedNew) return Promise.reject(new Error("Đơn vị tính không được để trống"));
+    const units = loadUnits();
+    if (!units.includes(oldUnit)) return Promise.reject(new Error("Đơn vị tính cũ không tồn tại"));
+    if (oldUnit !== normalizedNew && units.includes(normalizedNew)) return Promise.reject(new Error("Đơn vị tính đã tồn tại"));
+    const next = units.map((u) => (u === oldUnit ? normalizedNew : u));
+    return Promise.resolve({ data: saveUnits(next) });
+  },
+  delete: (unit) => {
+    const units = loadUnits();
+    const next = units.filter((u) => u !== unit);
+    return Promise.resolve({ data: saveUnits(next) });
+  },
+  DEFAULT_UNITS,
 };
 
 export const BrandService = {

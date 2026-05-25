@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AdminLayout from "@/app/admin/layout";
 import DashboardPage from "@/app/admin/page";
 import ProductsPage from "@/app/admin/products/page";
+import CategoriesPage from "@/app/admin/categories/page";
 import CustomersPage from "@/app/admin/customers/page";
 import InvoicesPage from "@/app/admin/invoices/page";
 import SuppliersPage from "@/app/admin/suppliers/page";
@@ -27,6 +28,12 @@ function App() {
               <ProductsPage />
             </AdminLayout>
           </RequireAuth>}/>
+      <Route path="/admin/categories" element={<RequireAuth>
+            <AdminLayout>
+              <CategoriesPage />
+            </AdminLayout>
+          </RequireAuth>}/>
+      
       <Route path="/admin/customers" element={<RequireAuth>
             <AdminLayout>
               <CustomersPage />

@@ -126,7 +126,7 @@ export default function POSPage() {
             sku: toText(p.maSku),
             price: toNumber(p.giaBanLe),
             cost: toNumber(p.giaNhapGanNhat),
-            unit: toText(p.donViChinh) || "Cái",
+            unit: toText(p.donViChinh) || "",
             category: dmMap[p.maDanhMuc] ?? "Khác",
             stock,           // soLuong — tồn kệ (shelf)
             tonKhoHienTai: currentInventory,  // tồn kho (warehouse)

@@ -24,6 +24,7 @@ import {
   SupplierService,
   CongNoNccService,
   LichSuThanhToanService,
+  PurchaseOrderService,
 } from "@/src/services/api-services";
 import * as XLSX from 'xlsx';
 
@@ -105,6 +106,27 @@ function formatDateTime(d) {
 function getInitials(name) {
   if (!name) return "?";
   return name.trim().split(/\s+/).map((w) => w[0]).slice(-2).join("").toUpperCase();
+}
+
+function getPurchaseOrderLines(order) {
+  const possibleKeys = [
+    "sanPhamDtos", "chiTiet", "chiTietPhieuNhap", "chiTietPhieuNhaps",
+    "danhSachChiTiet", "details", "items", "sanPhams"
+  ];
+  for (const key of possibleKeys) {
+    if (Array.isArray(order?.[key])) return order[key];
+  }
+  return [];
+}
+
+function getPurchaseOrderProductNames(order) {
+  const lines = getPurchaseOrderLines(order);
+  const names = lines.map((line) =>
+    line?.tenSanPham || line?.TenSanPham || line?.productName || line?.tenHangHoa || line?.tenSp || line?.name || line?.sanPham || line?.product || ""
+  ).filter(Boolean);
+  if (names.length === 0) return "";
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.slice(0, 3).join(", ") + (uniqueNames.length > 3 ? ` +${uniqueNames.length - 3}...` : "");
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -476,6 +498,8 @@ export default function SuppliersPage() {
   const [congNoLoading, setCongNoLoading]   = useState(false);
   const [paymentHistory, setPaymentHistory] = useState({});
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [purchaseHistory, setPurchaseHistory] = useState({});
+  const [purchaseHistoryLoading, setPurchaseHistoryLoading] = useState(false);
   const [payDialog, setPayDialog]           = useState(EMPTY_PAY_DIALOG);
   
   // Import states
@@ -537,6 +561,18 @@ export default function SuppliersPage() {
       setPaymentHistory((p) => ({ ...p, [id]: data?.data ?? [] }));
     } catch { setPaymentHistory((p) => ({ ...p, [id]: [] })); }
     finally { setPaymentHistoryLoading(false); }
+  };
+
+  const fetchPurchaseHistory = async (id) => {
+    if (purchaseHistory[id] !== undefined) return;
+    setPurchaseHistoryLoading(true);
+    try {
+      const res = await PurchaseOrderService.getAll();
+      const arr = res?.data ?? [];
+      const list = arr.filter((o) => String(o.maNcc) === String(id) || String(o.maNcc ?? o.maNccId) === String(id));
+      setPurchaseHistory((p) => ({ ...p, [id]: list }));
+    } catch { setPurchaseHistory((p) => ({ ...p, [id]: [] })); }
+    finally { setPurchaseHistoryLoading(false); }
   };
 
   const invalidateCongNo       = (id) => setCongNoData((p)      => { const n = { ...p }; delete n[id]; return n; });
@@ -1001,6 +1037,7 @@ export default function SuppliersPage() {
                             onValueChange={(val) => {
                               if (val === "cong-no") fetchCongNo(supplier.id);
                               if (val === "payment-history") fetchPaymentHistory(supplier.id);
+                              if (val === "purchase-history") fetchPurchaseHistory(supplier.id);
                             }}
                           >
                             <TabsList className="h-9 rounded-lg bg-muted/60 p-1">
@@ -1009,6 +1046,9 @@ export default function SuppliersPage() {
                               </TabsTrigger>
                               <TabsTrigger value="cong-no" className="gap-1.5 rounded-md px-4 text-xs">
                                 <History className="h-3.5 w-3.5" /> Công nợ
+                              </TabsTrigger>
+                              <TabsTrigger value="purchase-history" className="gap-1.5 rounded-md px-4 text-xs">
+                                <FileSpreadsheet className="h-3.5 w-3.5" /> Lịch sử nhập
                               </TabsTrigger>
                               <TabsTrigger value="payment-history" className="gap-1.5 rounded-md px-4 text-xs">
                                 <CreditCard className="h-3.5 w-3.5" /> Lịch sử TT
@@ -1113,6 +1153,98 @@ export default function SuppliersPage() {
                                         <Button size="sm" onClick={() => openPayDialog(list, totalDebtList)} className="gap-1.5">
                                           <CreditCard className="h-3.5 w-3.5" /> Thanh toán tất cả
                                         </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </TabsContent>
+
+                            <TabsContent value="purchase-history" className="mt-4">
+                              {(() => {
+                                const list = purchaseHistory[supplier.id] ?? [];
+                                const total = list.reduce((s, x) => s + toNumber(x.tongTienNhap ?? x.tongTien ?? 0), 0);
+                                const countLines = (order) => {
+                                  if (Array.isArray(order.sanPhamDtos)) return order.sanPhamDtos.length;
+                                  if (Array.isArray(order.chiTiet)) return order.chiTiet.length;
+                                  if (Array.isArray(order.chiTietPhieuNhap)) return order.chiTietPhieuNhap.length;
+                                  if (Array.isArray(order.chiTietPhieuNhaps)) return order.chiTietPhieuNhaps.length;
+                                  if (Array.isArray(order.danhSachChiTiet)) return order.danhSachChiTiet.length;
+                                  if (Array.isArray(order.details)) return order.details.length;
+                                  return 0;
+                                };
+
+                                return (
+                                  <div className="space-y-4 rounded-xl border bg-background p-4 shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <h3 className="text-sm font-semibold">Lịch sử nhập hàng</h3>
+                                        <p className="text-xs text-muted-foreground">Thông tin đơn hàng nhập từ nhà cung cấp này</p>
+                                      </div>
+                                      <Badge variant="secondary" className="text-xs">{list.length} phiếu</Badge>
+                                    </div>
+
+                                    {purchaseHistoryLoading && purchaseHistory[supplier.id] === undefined ? (
+                                      <div className="flex h-24 items-center justify-center gap-2 text-muted-foreground">
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        <span className="text-sm">Đang tải...</span>
+                                      </div>
+                                    ) : (
+                                      <div className="overflow-hidden rounded-lg border">
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
+                                              <TableHead>Mã phiếu</TableHead>
+                                              <TableHead>Ngày nhập</TableHead>
+                                              <TableHead>Sản phẩm</TableHead>
+                                              <TableHead className="text-right">Tổng nhập</TableHead>
+                                              <TableHead className="text-right">Đã TT</TableHead>
+                                              <TableHead className="text-right">Còn nợ</TableHead>
+                                              <TableHead>Trạng thái</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {list.length === 0 ? (
+                                              <TableRow>
+                                                <TableCell colSpan={7} className="h-20 text-center text-sm text-muted-foreground">Không có phiếu nhập nào</TableCell>
+                                              </TableRow>
+                                            ) : list.map((item) => {
+                                              const lineCount = countLines(item);
+                                              const totalOrder = toNumber(item.tongTienNhap ?? item.tongTien ?? 0);
+                                              const paid = toNumber(item.daThanhToanNcc ?? item.tongDaThanhToan ?? 0);
+                                              return (
+                                                <TableRow key={String(item.maPhieuNhap ?? item.maPhieu ?? item.id ?? Math.random())} className="text-sm hover:bg-muted/30">
+                                                  <TableCell className="font-medium">PN{String(item.maPhieuNhap ?? item.maPhieu ?? item.id ?? "").padStart(4, "0")}</TableCell>
+                                                  <TableCell className="text-muted-foreground">
+                                                    {item.ngayNhap ? new Date(item.ngayNhap).toLocaleDateString("vi-VN") : (item.ngayPhatSinh ? new Date(item.ngayPhatSinh).toLocaleDateString("vi-VN") : "--")}
+                                                  </TableCell>
+                                                  <TableCell>
+                                                    <div className="font-medium">
+                                                      {getPurchaseOrderProductNames(item) || `${lineCount} dòng`}
+                                                    </div>
+                                                    {lineCount > 0 && (
+                                                      <div className="text-xs text-muted-foreground">{lineCount} sản phẩm</div>
+                                                    )}
+                                                  </TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(totalOrder)}</TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(paid)}</TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(totalOrder - paid)}</TableCell>
+                                                  <TableCell>
+                                                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
+                                                      {item.trangThaiNhapHang ?? item.trangThai ?? "--"}
+                                                    </span>
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    )}
+
+                                    {list.length > 0 && (
+                                      <div className="flex items-center justify-between rounded-lg bg-muted/5 px-4 py-3">
+                                        <p className="text-sm">Tổng: <span className="font-bold">{formatCurrencyVN(total)}</span></p>
                                       </div>
                                     )}
                                   </div>

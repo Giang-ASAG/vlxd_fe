@@ -79,6 +79,7 @@ import { cn } from "@/lib/utils";
 import {
   ProductService,
   CategoryService,
+  UnitService,
   SupplierService,
   PurchaseOrderService,
 } from "@/src/services/api-services";
@@ -128,25 +129,50 @@ function Toast({ message, type, onClose }) {
 
 // ── Form / Select ──────────────────────────────────────────────────────────
 
-const UNITS = [
-  "Bao",
-  "Cây",
-  "Viên",
-  "Khối",
-  "Thùng",
-  "Cuộn",
-  "Cái",
-  "Mét",
-  "M3",
-  "Tờ",
-  "Lon",
-];
-
-const DEFAULT_UNIT = "Cái";
-
 function trimUnit(u) {
   if (u === null || u === undefined) return "";
   return String(u).trim();
+}
+
+function getUnitsBase(units) {
+  return units?.length ? units : UnitService.DEFAULT_UNITS;
+}
+
+function getProductUnit(product) {
+  if (!product) return "";
+  return trimUnit(
+    product.unit ??
+    product.donViChinh ??
+    product.DonViChinh,
+  );
+}
+
+/** Chuẩn hóa đơn vị với danh sách quản lý. */
+function resolveUnitForSelect(unit, units) {
+  const cur = trimUnit(unit);
+  if (!cur) return "";
+  const base = getUnitsBase(units);
+  const exact = base.find((u) => trimUnit(u) === cur);
+  if (exact) return exact;
+  const ci = base.find((u) => trimUnit(u).toLowerCase() === cur.toLowerCase());
+  if (ci) return ci;
+  return cur;
+}
+
+function buildUnitSelectState(formUnit, units) {
+  const base = [...getUnitsBase(units)];
+  const cur = trimUnit(formUnit);
+  if (!cur) {
+    return { value: undefined, options: base };
+  }
+  const value = resolveUnitForSelect(cur, units);
+  const inList = base.some((u) => trimUnit(u) === trimUnit(value));
+  const options = value && !inList ? [...base, value] : base;
+  return { value, options };
+}
+
+function displayProductUnit(product) {
+  return getProductUnit(product) || "—";
 }
 
 function toSelectIdString(v) {
@@ -169,9 +195,112 @@ const EMPTY_FORM = {
   tonKhoHienTaiAdd: "0",
   tonKhoToiThieu: "0",
   tonKhoToiDa: "999999999",
-  unit: DEFAULT_UNIT,
+  unit: "",
   maNccMacDinh: "",
 };
+
+// Units management dialog (top-level component)
+function UnitsManagerDialog({ open, onOpenChange, onUnitsChange }) {
+  const [unitsList, setUnitsList] = useState([]);
+  const [newUnit, setNewUnit] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [editingVal, setEditingVal] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const applyUnitsList = (list, action) => {
+    const next = Array.isArray(list) ? list.map(String) : [];
+    setUnitsList(next);
+    onUnitsChange?.(next, action);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await UnitService.getAll();
+        if (mounted) setUnitsList(res?.data ?? []);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false };
+  }, [open]);
+
+  const doCreate = async () => {
+    const name = newUnit.trim();
+    if (!name) return;
+    setBusy(true);
+    try {
+      const res = await UnitService.create(name);
+      applyUnitsList(res?.data ?? [], { type: "create", unit: name });
+      setNewUnit("");
+    } catch (e) {
+      alert(e?.message || "Lỗi");
+    } finally { setBusy(false); }
+  };
+
+  const doUpdate = async () => {
+    const nextName = editingVal.trim();
+    if (!nextName || !editing) return;
+    setBusy(true);
+    try {
+      const res = await UnitService.update(editing, nextName);
+      applyUnitsList(res?.data ?? [], { type: "update", from: editing, to: nextName });
+      setEditing(null);
+      setEditingVal("");
+    } catch (e) { alert(e?.message || "Lỗi"); } finally { setBusy(false); }
+  };
+
+  const doDelete = async (u) => {
+    if (!confirm(`Xóa đơn vị '${u}'?`)) return;
+    setBusy(true);
+    try {
+      const res = await UnitService.delete(u);
+      applyUnitsList(res?.data ?? [], { type: "delete", unit: u });
+    } catch (e) { alert(e?.message || "Lỗi"); } finally { setBusy(false); }
+  };
+
+  if (!open) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Quản lý đơn vị tính</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Input value={newUnit} onChange={(e) => setNewUnit(e.target.value)} placeholder="Thêm đơn vị mới" />
+            <Button onClick={doCreate} disabled={!newUnit.trim() || busy}>Thêm</Button>
+          </div>
+          <div className="space-y-2">
+            {unitsList.map((u) => (
+              <div key={u} className="flex items-center gap-2">
+                {editing === u ? (
+                  <>
+                    <Input value={editingVal} onChange={(e) => setEditingVal(e.target.value)} />
+                    <Button onClick={doUpdate} disabled={!editingVal.trim() || busy}>Lưu</Button>
+                    <Button variant="secondary" onClick={() => { setEditing(null); setEditingVal(""); }}>Hủy</Button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex-1">{u}</div>
+                    <Button variant="outline" size="sm" onClick={() => { setEditing(u); setEditingVal(u); }}>Sửa</Button>
+                    <Button variant="destructive" size="sm" onClick={() => doDelete(u)}>Xóa</Button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Đóng</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function generateSkuFromName(name) {
   if (!name || typeof name !== "string") return "";
@@ -263,13 +392,21 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
     });
     setSupplierMap(supMap);
 
-    const unitMapObj = {};
-    UNITS.forEach(unit => {
-      unitMapObj[unit.toLowerCase().trim()] = unit;
-      unitMapObj[unit] = unit;
-    });
-    setUnitMap(unitMapObj);
-  }, [categories, suppliers]);
+    (async () => {
+      try {
+        const res = await UnitService.getAll();
+        const unitList = res?.data ?? UnitService.DEFAULT_UNITS;
+        const unitMapObj = {};
+        unitList.forEach((unit) => {
+          unitMapObj[unit.toLowerCase().trim()] = unit;
+          unitMapObj[unit] = unit;
+        });
+        setUnitMap(unitMapObj);
+      } catch {
+        setUnitMap({});
+      }
+    })();
+  }, [categories, suppliers, isOpen]);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files?.[0];
@@ -325,6 +462,8 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
             }
           }
 
+
+
           let maNccMacDinh = null;
           if (nhaCungCap) {
             const supplierId = supplierMap[nhaCungCap.toLowerCase().trim()] || supplierMap[nhaCungCap];
@@ -335,14 +474,16 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
             }
           }
 
-          let unit = DEFAULT_UNIT;
+          let unit = "";
           if (donViTinh) {
             const mappedUnit = unitMap[donViTinh.toLowerCase().trim()] || unitMap[donViTinh];
             if (mappedUnit) {
               unit = mappedUnit;
             } else {
-              validationErrors.push(`Dòng ${index + 2}: Đơn vị tính "${donViTinh}" không hợp lệ, sẽ dùng mặc định "${DEFAULT_UNIT}"`);
+              validationErrors.push(`Dòng ${index + 2}: Đơn vị tính "${donViTinh}" không hợp lệ`);
             }
+          } else {
+            validationErrors.push(`Dòng ${index + 2}: Thiếu đơn vị tính`);
           }
 
           mappedData.push({
@@ -382,7 +523,15 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
     await onImport(previewData);
   };
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    let unitList = UnitService.DEFAULT_UNITS;
+    try {
+      const res = await UnitService.getAll();
+      unitList = res?.data?.length ? res.data : unitList;
+    } catch {
+      // use defaults
+    }
+
     const templateData = [
       {
         "Tên sản phẩm": "Gạch ốp lát 30x30",
@@ -424,7 +573,7 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
     XLSX.utils.book_append_sheet(wb, categorySheet, "NhomHang");
     
     const unitSheet = XLSX.utils.json_to_sheet(
-      UNITS.map(u => ({ "Đơn vị tính": u }))
+      unitList.map((u) => ({ "Đơn vị tính": u }))
     );
     XLSX.utils.book_append_sheet(wb, unitSheet, "DonViTinh");
     
@@ -644,7 +793,7 @@ function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) 
 
   const vatPercent = resolveVatPercentFromApi(p);
   const rawDonVi = String(p.donViChinh ?? p.DonViChinh ?? "").trim();
-  const unitForSelect = trimUnit(rawDonVi) || DEFAULT_UNIT;
+  const unitForSelect = trimUnit(rawDonVi);
 
   let maDanhMuc = p.maDanhMuc ?? p.MaDanhMuc ?? p.maDanhMucId;
   if ((maDanhMuc == null || maDanhMuc === "") && dmList.length) {
@@ -684,6 +833,7 @@ function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) 
     tonKhoToiThieu: p.tonKhoToiThieu,
     tonKhoToiDa: p.tonKhoToiDa,
     unit: unitForSelect,
+    donViChinh: unitForSelect || rawDonVi,
     maNccMacDinh: toSelectIdString(maNccMacDinh),
     supplierName,
     ngayTao: p.ngayTao,
@@ -760,7 +910,7 @@ function ProductPurchaseHistoryTab({ product, suppliers, purchaseOrders, formatP
                       {order.ngayNhap ? new Date(order.ngayNhap).toLocaleDateString("vi-VN") : "--"}
                     </TableCell>
                     <TableCell>{order.tenNcc ?? suppliers.find((s) => s.maNcc === order.maNcc)?.tenNcc ?? "--"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{quantity.toLocaleString("vi-VN")} {product.unit}</TableCell>
+                    <TableCell className="text-right tabular-nums">{quantity.toLocaleString("vi-VN")} {displayProductUnit(product)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatPrice(unitPrice)}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">{formatPrice(lineTotal)}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{formatPrice(order.daThanhToanNcc ?? 0)}</TableCell>
@@ -783,11 +933,42 @@ function ProductPurchaseHistoryTab({ product, suppliers, purchaseOrders, formatP
 
 // ─── ProductForm Component ─────────────────────────────────────────────────
 
-export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [], onSave, onCancel, onDelete, saving = false, className = "", compact = false }) {
+export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [], onSave, onCancel, onDelete, onValidationError, saving = false, className = "", compact = false }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [isCreatingShortcut, setIsCreatingShortcut] = useState(false);
+  const [showManageUnits, setShowManageUnits] = useState(false);
+  const [units, setUnits] = useState(() => [...UnitService.DEFAULT_UNITS]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await UnitService.getAll();
+        if (mounted) setUnits(res?.data?.length ? res.data : [...UnitService.DEFAULT_UNITS]);
+      } catch {
+        // keep defaults
+      }
+    })();
+    return () => { mounted = false };
+  }, []);
+
+  const handleUnitsChange = useCallback((list, action) => {
+    const next = Array.isArray(list) && list.length ? list.map(String) : [...UnitService.DEFAULT_UNITS];
+    setUnits(next);
+    if (!action) return;
+    setForm((p) => {
+      const cur = resolveUnitForSelect(p.unit, next);
+      if (action.type === "delete" && cur === action.unit) {
+        return { ...p, unit: "" };
+      }
+      if (action.type === "update" && cur === action.from) {
+        return { ...p, unit: action.to };
+      }
+      return p;
+    });
+  }, []);
 
   useLayoutEffect(() => {
     if (product) {
@@ -810,7 +991,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
         tonKhoHienTaiAdd: "0",
         tonKhoToiThieu: String(product.tonKhoToiThieu ?? "0"),
         tonKhoToiDa: String(product.tonKhoToiDa ?? "999999999"),
-        unit: trimUnit(product.unit ?? product.donViChinh) || DEFAULT_UNIT,
+        unit: getProductUnit(product),
         maNccMacDinh,
       });
     } else {
@@ -818,22 +999,27 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     }
   }, [product, danhMucs, suppliers]);
 
+  useEffect(() => {
+    if (!product) return;
+    setForm((prev) => {
+      const raw = trimUnit(prev.unit);
+      const source = raw ? prev.unit : getProductUnit(product);
+      const resolved = resolveUnitForSelect(source, units);
+      if (!resolved || prev.unit === resolved) return prev;
+      return { ...prev, unit: resolved };
+    });
+  }, [product?.id, units]);
+
   const priceAfterTax = useMemo(() => {
     const pbt = Number(form.priceBeforeTax) || 0;
     const vat = Number(form.vat) || 0;
     return Math.round(pbt * (1 + vat / 100));
   }, [form.priceBeforeTax, form.vat]);
 
-  const unitSelectOptions = useMemo(() => {
-    const cur = trimUnit(form.unit);
-    if (cur && !UNITS.includes(cur)) return [...UNITS, cur];
-    return UNITS;
-  }, [form.unit]);
-
-  const unitSelectValue = useMemo(() => {
-    const cur = trimUnit(form.unit);
-    return cur || DEFAULT_UNIT;
-  }, [form.unit]);
+  const { value: unitSelectValue, options: unitSelectOptions } = useMemo(
+    () => buildUnitSelectState(form.unit, units),
+    [form.unit, units],
+  );
 
   const set = (key) => (e) => {
     let value = e.target.value;
@@ -863,6 +1049,42 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Validation
+    const isCreate = !product;
+    const isBlank = (value) => value === null || value === undefined || String(value).trim() === "";
+    const errors = [];
+    if (!form.name.trim()) errors.push("Tên hàng hóa không được để trống");
+    if (isCreate && !form.sku.trim()) errors.push("Mã SKU không được để trống");
+    if (isBlank(form.maDanhMuc)) errors.push("Nhóm hàng không được để trống");
+    if (isCreate && isBlank(form.maNccMacDinh)) errors.push("Nhà cung cấp mặc định không được để trống");
+    if (!trimUnit(form.unit)) errors.push("Đơn vị tính không được để trống");
+    if (isCreate && isBlank(form.cost)) errors.push("Giá vốn không được để trống");
+    if (isBlank(form.priceBeforeTax)) errors.push("Giá bán trước thuế không được để trống");
+    if (isCreate && isBlank(form.stock)) errors.push("Số lượng không được để trống");
+    if (isCreate && isBlank(form.tonKhoHienTai)) errors.push("Tồn kho không được để trống");
+    if (isCreate && isBlank(form.tonKhoToiThieu)) errors.push("Tồn thấp nhất không được để trống");
+    if (isCreate && isBlank(form.tonKhoToiDa)) errors.push("Tồn cao nhất không được để trống");
+    if (!isBlank(form.cost) && Number(form.cost) < 0) errors.push("Giá vốn không được âm");
+    if (!isBlank(form.priceBeforeTax) && Number(form.priceBeforeTax) <= 0) errors.push("Giá bán trước thuế phải > 0");
+    if (!isBlank(form.stock) && Number(form.stock) < 0) errors.push("Số lượng không được âm");
+    if (!isBlank(form.tonKhoHienTai) && Number(form.tonKhoHienTai) < 0) errors.push("Tồn kho không được âm");
+    if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
+    if (!isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < 0) errors.push("Tồn cao nhất không được âm");
+    if (!isBlank(form.tonKhoToiThieu) && !isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < Number(form.tonKhoToiThieu)) {
+      errors.push("Tồn cao nhất phải lớn hơn hoặc bằng tồn thấp nhất");
+    }
+    
+    if (errors.length > 0) {
+      const message = `${isCreate ? "Không thể thêm sản phẩm" : "Không thể lưu sản phẩm"}.\nVui lòng nhập đầy đủ thông tin:\n${errors.join("\n")}`;
+      if (onValidationError) {
+        onValidationError(message, "warning");
+      } else {
+        alert(message);
+      }
+      return;
+    }
+
     const isEdit = Boolean(product);
     const stockAdd = Number(form.stockAdd ?? 0) || 0;
     const stockFinal = isEdit ? (Number(product?.stock ?? 0) || 0) + stockAdd : Number(form.stock) || 0;
@@ -884,7 +1106,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
       tonKhoToiDa: Number(form.tonKhoToiDa) || 999999999,
       maDanhMuc: form.maDanhMuc ? Number(form.maDanhMuc) : null,
       maNccMacDinh: form.maNccMacDinh ? Number(form.maNccMacDinh) : null,
-      unit: trimUnit(form.unit) || DEFAULT_UNIT,
+      unit: trimUnit(form.unit),
       ngayTao: product?.ngayTao ?? new Date().toISOString(),
     });
   };
@@ -898,7 +1120,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
 
   return (
     <div className={cn("bg-background", className)}>
-      <form onSubmit={handleSubmit} className={cn(compact ? "p-0" : "p-6")}>
+      <form onSubmit={handleSubmit} noValidate className={cn(compact ? "p-0" : "p-6")}>
         <Accordion type="multiple" defaultValue={["item-1", "item-2", "item-3"]} className="mb-6 space-y-4">
           <AccordionItem value="item-1" className="border rounded-lg overflow-hidden">
             <AccordionTrigger className="hover:no-underline bg-muted/50 px-4 py-3">
@@ -930,7 +1152,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Nhóm hàng</Label>
+                    <Label className="text-sm font-medium">Nhóm hàng *</Label>
                     <button type="button" onClick={() => setShowAddCategory(true)} className="text-xs text-primary hover:underline">
                       + Tạo mới
                     </button>
@@ -951,13 +1173,22 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                 </div>
                 {!product && (
                   <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Mã SKU</Label>
-                    <Input value={form.sku} onChange={set("sku")} placeholder="Tự động sinh từ tên hàng hóa" className="h-10" />
+                    <Label className="text-sm font-medium">Mã SKU *</Label>
+                    <Input value={form.sku} onChange={set("sku")} placeholder="Tự động sinh từ tên hàng hóa" className="h-10" required />
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Đơn vị tính</Label>
-                  <Select key={`unit-${selectInstanceKey}-${unitSelectValue}`} value={unitSelectValue} onValueChange={(v) => setForm((p) => ({ ...p, unit: v }))}>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Đơn vị tính *</Label>
+                    <button type="button" onClick={() => setShowManageUnits(true)} className="text-xs text-primary hover:underline">
+                      + Quản lý
+                    </button>
+                  </div>
+                  <Select
+                    key={`unit-${selectInstanceKey}`}
+                    value={unitSelectValue ?? undefined}
+                    onValueChange={(v) => setForm((p) => ({ ...p, unit: v }))}
+                  >
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Chọn đơn vị tính" />
                     </SelectTrigger>
@@ -969,7 +1200,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                   </Select>
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <Label className="text-sm font-medium">Nhà cung cấp mặc định</Label>
+                  <Label className="text-sm font-medium">Nhà cung cấp mặc định{!product ? " *" : ""}</Label>
                   <Select key={`ncc-${selectInstanceKey}-${form.maNccMacDinh}`} value={form.maNccMacDinh ? form.maNccMacDinh : undefined} onValueChange={(v) => setForm((p) => ({ ...p, maNccMacDinh: v }))}>
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Chọn nhà cung cấp" />
@@ -998,15 +1229,15 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
             <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Giá vốn (đ)</Label>
-                  <Input type="number" value={form.cost} onChange={set("cost")} className="h-10" />
+                  <Label className="text-sm font-medium">Giá vốn (đ){!product ? " *" : ""}</Label>
+                  <Input type="number" value={form.cost} onChange={set("cost")} className="h-10" required />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Giá bán trước thuế</Label>
-                  <Input type="number" value={form.priceBeforeTax} onChange={set("priceBeforeTax")} className="h-10" />
+                  <Label className="text-sm font-medium">Giá bán trước thuế *</Label>
+                  <Input type="number" value={form.priceBeforeTax} onChange={set("priceBeforeTax")} className="h-10" required />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">VAT (%)</Label>
+                  <Label className="text-sm font-medium">VAT (%) *</Label>
                   <Select key={`vat-${selectInstanceKey}-${vatSelectValue}`} value={vatSelectValue} onValueChange={(v) => setForm((p) => ({ ...p, vat: v }))}>
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Chọn VAT" />
@@ -1047,7 +1278,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
             <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">{product ? "Số lượng hiện tại" : "Số lượng"}</Label>
+                  <Label className="text-sm font-medium">{product ? "Số lượng hiện tại" : "Số lượng *"}</Label>
                   <Input
                     type="number"
                     value={displayedStock}
@@ -1055,10 +1286,11 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                     className={cn("h-10", product && "bg-muted/60 text-muted-foreground cursor-not-allowed")}
                     readOnly={!!product}
                     disabled={!!product}
+                    required={!product}
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">{product ? "Tồn kho hiện tại" : "Tồn kho"}</Label>
+                  <Label className="text-sm font-medium">{product ? "Tồn kho hiện tại" : "Tồn kho *"}</Label>
                   <Input
                     type="number"
                     value={displayedTonKhoHienTai}
@@ -1066,6 +1298,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                     className={cn("h-10", product && "bg-muted/60 text-muted-foreground cursor-not-allowed")}
                     readOnly={!!product}
                     disabled={!!product}
+                    required={!product}
                   />
                 </div>
                 {product && (
@@ -1081,12 +1314,12 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                   </div>
                 )}
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Tồn thấp nhất</Label>
-                  <Input type="number" value={form.tonKhoToiThieu} onChange={set("tonKhoToiThieu")} className="h-10" />
+                  <Label className="text-sm font-medium">Tồn thấp nhất{!product ? " *" : ""}</Label>
+                  <Input type="number" value={form.tonKhoToiThieu} onChange={set("tonKhoToiThieu")} className="h-10" required />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Tồn cao nhất</Label>
-                  <Input type="number" value={form.tonKhoToiDa} onChange={set("tonKhoToiDa")} className="h-10" />
+                  <Label className="text-sm font-medium">Tồn cao nhất{!product ? " *" : ""}</Label>
+                  <Input type="number" value={form.tonKhoToiDa} onChange={set("tonKhoToiDa")} className="h-10" required />
                 </div>
               </div>
             </AccordionContent>
@@ -1128,13 +1361,18 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        <UnitsManagerDialog
+          open={showManageUnits}
+          onOpenChange={setShowManageUnits}
+          onUnitsChange={handleUnitsChange}
+        />
     </div>
   );
 }
 
 // ─── ProductModal Component ─────────────────────────────────────────────────
 
-export function ProductModal({ open, onOpenChange, product, danhMucs = [], setDanhMucs, suppliers = [], onSave, onDelete, saving = false }) {
+export function ProductModal({ open, onOpenChange, product, danhMucs = [], setDanhMucs, suppliers = [], onSave, onDelete, onValidationError, saving = false }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto p-0 gap-0 border-0 shadow-2xl rounded-xl" style={{ maxWidth: "1024px", width: "95vw" }}>
@@ -1157,6 +1395,7 @@ export function ProductModal({ open, onOpenChange, product, danhMucs = [], setDa
           onSave={onSave}
           onCancel={() => onOpenChange(false)}
           onDelete={onDelete}
+          onValidationError={onValidationError}
           saving={saving}
         />
       </DialogContent>
@@ -1277,6 +1516,12 @@ export function ProductTable() {
           });
           continue;
         }
+
+        if (!trimUnit(product.donViChinh)) {
+          errorCount++;
+          errors.push(`${product.tenSanPham}: Thiếu đơn vị tính`);
+          continue;
+        }
         
         try {
           const payload = {
@@ -1285,7 +1530,7 @@ export function ProductTable() {
             maNguoiLap: session.user?.sub ? Number(session.user?.sub) : 1,
             maDanhMuc: product.maDanhMuc || null,
             maNccMacDinh: product.maNccMacDinh || null,
-            donViChinh: product.donViChinh || DEFAULT_UNIT,
+            donViChinh: trimUnit(product.donViChinh),
             giaNhapGanNhat: product.giaNhapGanNhat || 0,
             giaBanLe: product.giaBanLe || 0,
             thue: product.thue || 0,
@@ -1371,12 +1616,7 @@ export function ProductTable() {
           const n = Number(formData.maNccMacDinh);
           return Number.isFinite(n) && String(formData.maNccMacDinh).trim() !== "" ? n : null;
         })(),
-        donViChinh: (() => {
-          const u = formData.unit ?? formData.donViChinh;
-          if (u === null || u === undefined) return "Cái";
-          const s = String(u).trim();
-          return s || "Cái";
-        })(),
+        donViChinh: trimUnit(formData.unit ?? formData.donViChinh),
         giaNhapGanNhat: Number(formData.cost) || 0,
         giaBanLe: Number(formData.priceBeforeTax) || 0,
         thue: Number(formData.vat) || 0,
@@ -1671,8 +1911,8 @@ export function ProductTable() {
                       <TableCell>{product.category}</TableCell>
                       <TableCell className="text-right text-muted-foreground tabular-nums">{formatPrice(product.cost)}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{formatPrice(product.price)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{product.stock.toLocaleString("vi-VN")} {product.unit}</TableCell>
-                      <TableCell className="text-right tabular-nums">{product.tonKhoHienTai.toLocaleString("vi-VN")} {product.unit}</TableCell>
+                      <TableCell className="text-right tabular-nums">{product.stock.toLocaleString("vi-VN")} {displayProductUnit(product)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{product.tonKhoHienTai.toLocaleString("vi-VN")} {displayProductUnit(product)}</TableCell>
                       <TableCell>
                         <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", status.className)}>
                           {status.label}
@@ -1709,6 +1949,7 @@ export function ProductTable() {
                                       onSave={(data) => handleSaveProduct({ ...data, id: product.id }, true)}
                                       onCancel={() => setExpandedRowId(null)}
                                       onDelete={(p) => setDeleteTarget(p)}
+                                      onValidationError={showToast}
                                       saving={saving}
                                       compact
                                     />
@@ -1755,6 +1996,7 @@ export function ProductTable() {
         setDanhMucs={setDanhMucs}
         suppliers={suppliers}
         onSave={(data) => handleSaveProduct(data, false)}
+        onValidationError={showToast}
         saving={saving}
       />
 
