@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,9 @@ import {
   PurchaseOrderService,
   ProductService,
 } from "@/src/services/api-services";
+import { getSession } from "@/src/auth/session";
 import * as XLSX from 'xlsx';
+
 
 // ─── Toast Notification Component ────────────────────────────────────────────
 
@@ -114,6 +116,44 @@ function formatDateTime(d) {
 function getInitials(name) {
   if (!name) return "?";
   return name.trim().split(/\s+/).map((w) => w[0]).slice(-2).join("").toUpperCase();
+}
+
+function getProductId(p) {
+  return String(p?.maSanPham ?? p?.MaSanPham ?? p?.id ?? "");
+}
+
+function getProductSupplierId(p) {
+  const raw = p?.maNccMacDinh ?? p?.maNcc ?? p?.MaNccMacDinh ?? p?.MaNcc;
+  if (raw == null || raw === "" || raw === 0 || raw === "0") return null;
+  return String(raw);
+}
+
+function isProductLinkedToSupplier(p) {
+  return getProductSupplierId(p) != null;
+}
+
+function getMaNguoiLap() {
+  const session = getSession();
+  const n = Number(session?.user?.sub);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function toProductIdList(ids) {
+  if (!Array.isArray(ids)) return [];
+  return [...new Set(ids.map((id) => Number(id)).filter((n) => Number.isFinite(n) && n > 0))];
+}
+
+/** Payload khớp schema POST/PUT /NhaCungCaps */
+function buildSupplierPayload(formData, productIds = []) {
+  return {
+    tenNcc: formData.tenNcc.trim(),
+    soDienThoai: formData.soDienThoai.trim(),
+    diaChi: formData.diaChi.trim(),
+    email: formData.email.trim(),
+    ghiChu: formData.ghiChu.trim(),
+    maNguoiLap: getMaNguoiLap(),
+    selectedProductIds: toProductIdList(productIds),
+  };
 }
 
 function getPurchaseOrderLines(order) {
@@ -293,7 +333,7 @@ function StatusBadge({ value, labelMap, colorMap }) {
 
 // ─── Product Picker Field ─────────────────────────────────────────────────────
 
-function ProductPickerField({ allProducts, selectedIds, onChange, loading }) {
+function ProductPickerField({ allProducts, selectedIds, onChange, loading, existingProductIds = [] }) {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -309,18 +349,30 @@ function ProductPickerField({ allProducts, selectedIds, onChange, loading }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const filtered = allProducts.filter((p) =>
-    p.tenSanPham.toLowerCase().includes(search.toLowerCase()) ||
-    p.maSku?.toLowerCase().includes(search.toLowerCase())
+  const existingSet = useMemo(
+    () => new Set(existingProductIds.map((id) => String(id))),
+    [existingProductIds]
   );
 
-  const selectedProducts = allProducts.filter((p) => selectedIds.includes(p.maSanPham));
+  const selectableProducts = useMemo(
+    () => allProducts.filter((p) => !existingSet.has(getProductId(p))),
+    [allProducts, existingSet]
+  );
+
+  const filtered = selectableProducts.filter((p) =>
+    (p.tenSanPham ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    (p.maSku ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const selectedIdSet = useMemo(() => new Set(selectedIds.map(String)), [selectedIds]);
+  const selectedProducts = allProducts.filter((p) => selectedIdSet.has(getProductId(p)));
 
   const toggle = (id) => {
+    const sid = String(id);
     onChange(
-      selectedIds.includes(id)
-        ? selectedIds.filter((x) => x !== id)
-        : [...selectedIds, id]
+      selectedIdSet.has(sid)
+        ? selectedIds.filter((x) => String(x) !== sid)
+        : [...selectedIds, Number(id) || id]
     );
   };
 
@@ -369,15 +421,20 @@ function ProductPickerField({ allProducts, selectedIds, onChange, loading }) {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-xs">Đang tải...</span>
                 </div>
+              ) : selectableProducts.length === 0 ? (
+                <div className="py-6 text-center text-xs text-muted-foreground">
+                  Không còn sản phẩm chưa liên kết nhà cung cấp
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="py-6 text-center text-xs text-muted-foreground">Không tìm thấy sản phẩm</div>
               ) : filtered.map((p) => {
-                const checked = selectedIds.includes(p.maSanPham);
+                const productId = getProductId(p);
+                const checked = selectedIdSet.has(productId);
                 return (
                   <button
-                    key={p.maSanPham}
+                    key={productId}
                     type="button"
-                    onClick={() => toggle(p.maSanPham)}
+                    onClick={() => toggle(productId)}
                     className={cn(
                       "flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/50",
                       checked && "bg-primary/5"
@@ -794,7 +851,11 @@ export default function SuppliersPage() {
   // Thêm vào sau const [purchaseHistoryLoading, ...]
   const [allProducts, setAllProducts] = useState([]);
   const [allProductsLoading, setAllProductsLoading] = useState(false);
-  // Trong formData, thêm selectedProductIds
+  const [supplierExistingProductIds, setSupplierExistingProductIds] = useState({});
+  const [supplierProductsLoading, setSupplierProductsLoading] = useState(false);
+  const [globalLinkedProductIds, setGlobalLinkedProductIds] = useState(null);
+  const [globalLinkedProductsLoading, setGlobalLinkedProductsLoading] = useState(false);
+
   // ─── API ────────────────────────────────────────────────────────────────────
   const fetchAllProducts = async () => {
     if (allProducts.length > 0) return;
@@ -807,6 +868,66 @@ export default function SuppliersPage() {
     } finally {
       setAllProductsLoading(false);
     }
+  };
+
+  const fetchSupplierExistingProducts = async (supplierId) => {
+    if (!supplierId) return;
+    setSupplierProductsLoading(true);
+    try {
+      const res = await ProductService.getBySupplierId(supplierId);
+      const ids = (res?.data ?? []).map(getProductId).filter(Boolean);
+      setSupplierExistingProductIds((prev) => ({ ...prev, [supplierId]: ids }));
+    } catch {
+      setSupplierExistingProductIds((prev) => ({ ...prev, [supplierId]: [] }));
+    } finally {
+      setSupplierProductsLoading(false);
+    }
+  };
+
+  const fetchGlobalLinkedProductIds = async () => {
+    setGlobalLinkedProductsLoading(true);
+    try {
+      let products = allProducts;
+      if (!products.length) {
+        const res = await ProductService.getAll();
+        products = res?.data ?? [];
+        setAllProducts(products);
+      }
+
+      const linked = new Set();
+      products.forEach((p) => {
+        if (isProductLinkedToSupplier(p)) {
+          const pid = getProductId(p);
+          if (pid) linked.add(pid);
+        }
+      });
+
+      const supplierIds = suppliers.map((s) => s.id).filter(Boolean);
+      if (supplierIds.length) {
+        const results = await Promise.all(
+          supplierIds.map((id) =>
+            ProductService.getBySupplierId(id).catch(() => ({ data: [] }))
+          )
+        );
+        results.forEach((res) => {
+          (res?.data ?? []).forEach((p) => {
+            const pid = getProductId(p);
+            if (pid) linked.add(pid);
+          });
+        });
+      }
+
+      setGlobalLinkedProductIds([...linked]);
+    } catch {
+      setGlobalLinkedProductIds([]);
+    } finally {
+      setGlobalLinkedProductsLoading(false);
+    }
+  };
+
+  const invalidateGlobalLinkedProducts = () => {
+    setGlobalLinkedProductIds(null);
+    setAllProducts([]);
   };
 
   const fetchSuppliers = async () => {
@@ -830,6 +951,7 @@ export default function SuppliersPage() {
         };
       }));
       setError(null);
+      invalidateGlobalLinkedProducts();
     } catch (err) {
       setError("Không thể tải danh sách nhà cung cấp. Vui lòng kiểm tra kết nối API.");
     } finally {
@@ -874,13 +996,31 @@ export default function SuppliersPage() {
 
   useEffect(() => { fetchSuppliers(); }, []);
 
+  useEffect(() => {
+    if (!expandedId) return;
+    fetchAllProducts();
+    fetchSupplierExistingProducts(expandedId);
+  }, [expandedId]);
+
+  useEffect(() => {
+    if (!addFormOpen || loading) return;
+    fetchAllProducts();
+    fetchGlobalLinkedProductIds();
+  }, [addFormOpen, loading, suppliers]);
+
   // ─── Form ────────────────────────────────────────────────────────────────────
 
   const updateFormField = (field, value) => setFormData((p) => ({ ...p, [field]: value }));
   const resetForm = () => setFormData(EMPTY_FORM);
 
   const handleAddClick = () => {
-    setAddFormOpen((p) => { if (!p) { setExpandedId(null); resetForm(); } return !p; });
+    setAddFormOpen((p) => {
+      if (!p) {
+        setExpandedId(null);
+        resetForm();
+      }
+      return !p;
+    });
   };
 
   const handleToggleSupplier = (supplier) => {
@@ -888,21 +1028,21 @@ export default function SuppliersPage() {
     if (expandedId === supplier.id) { setExpandedId(null); resetForm(); return; }
     setExpandedId(supplier.id);
     setFormData(createFormData(supplier));
-    fetchAllProducts(); // ← THÊM
   };
 
   const handleSaveNewSupplier = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await SupplierService.create({
-        maNcc: 0, tenNcc: formData.tenNcc.trim(), soDienThoai: formData.soDienThoai.trim(),
-        email: formData.email.trim(), diaChi: formData.diaChi.trim(), ghiChu: formData.ghiChu.trim(),
-      });
+      const res = await SupplierService.create(
+        buildSupplierPayload(formData, formData.selectedProductIds)
+      );
       await fetchSuppliers();
+      invalidateGlobalLinkedProducts();
       resetForm();
       setAddFormOpen(false);
-      showToast(`✅ Thêm nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
+      const msg = res?.error?.message ?? `Thêm nhà cung cấp "${formData.tenNcc}" thành công!`;
+      showToast(`✅ ${msg}`, "success");
     } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
@@ -913,15 +1053,21 @@ export default function SuppliersPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await SupplierService.update(supplierId, {
-        maNcc: toNumber(supplierId), tenNcc: formData.tenNcc.trim(),
-        soDienThoai: formData.soDienThoai.trim(), email: formData.email.trim(),
-        diaChi: formData.diaChi.trim(), ghiChu: formData.ghiChu.trim(),
-      });
+      const res = await SupplierService.update(
+        supplierId,
+        buildSupplierPayload(formData, formData.selectedProductIds)
+      );
       await fetchSuppliers();
+      invalidateGlobalLinkedProducts();
+      setSupplierExistingProductIds((prev) => {
+        const next = { ...prev };
+        delete next[supplierId];
+        return next;
+      });
       setExpandedId(null);
       resetForm();
-      showToast(`✅ Cập nhật nhà cung cấp "${formData.tenNcc}" thành công!`, "success");
+      const msg = res?.error?.message ?? `Cập nhật nhà cung cấp "${formData.tenNcc}" thành công!`;
+      showToast(`✅ ${msg}`, "success");
     } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
@@ -979,14 +1125,14 @@ export default function SuppliersPage() {
         }
 
         try {
-          await SupplierService.create({
-            maNcc: 0,
+          await SupplierService.create(buildSupplierPayload({
             tenNcc: supplier.tenNcc,
             soDienThoai: supplier.soDienThoai,
             email: supplier.email || "",
             diaChi: supplier.diaChi || "",
             ghiChu: supplier.ghiChu || "",
-          });
+            selectedProductIds: [],
+          }, []));
           successCount++;
           existingSupplierNames.add(supplier.tenNcc.toLowerCase().trim());
         } catch (err) {
@@ -1097,6 +1243,12 @@ export default function SuppliersPage() {
 
   const renderSupplierForm = (mode, supplier) => {
     const isEdit = mode === "edit";
+    const existingProductIds = isEdit && supplier
+      ? (supplierExistingProductIds[supplier.id] ?? [])
+      : (globalLinkedProductIds ?? []);
+    const productsPickerLoading = allProductsLoading
+      || (isEdit && supplierProductsLoading)
+      || (!isEdit && globalLinkedProductsLoading);
     return (
       <form onSubmit={(e) => isEdit && supplier ? handleSaveSupplier(e, supplier.id) : handleSaveNewSupplier(e)}
         className="space-y-4">
@@ -1127,7 +1279,8 @@ export default function SuppliersPage() {
               allProducts={allProducts}
               selectedIds={formData.selectedProductIds}
               onChange={(ids) => updateFormField("selectedProductIds", ids)}
-              loading={allProductsLoading}
+              loading={productsPickerLoading}
+              existingProductIds={existingProductIds}
             />
           </div>
           <div className="space-y-1.5 md:col-span-2">

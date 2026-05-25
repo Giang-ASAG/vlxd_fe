@@ -5,6 +5,23 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL || "https://vlxd-be.onrender.com/api";
 
+function formatApiError(data, status) {
+  if (!data || typeof data !== "object") return `API error: ${status}`;
+
+  if (data.errors && typeof data.errors === "object") {
+    const parts = Object.entries(data.errors).map(([field, messages]) => {
+      const text = Array.isArray(messages) ? messages.join(", ") : String(messages);
+      return `${field}: ${text}`;
+    });
+    if (parts.length) return parts.join("; ");
+  }
+
+  if (data.error?.message) return data.error.message;
+  if (typeof data.message === "string" && data.message) return data.message;
+  if (data.title) return data.title;
+  return `API error: ${status}`;
+}
+
 async function request(endpoint, options = {}) {
   const { method = "GET", headers = {}, body, ...customConfig } = options;
 
@@ -32,21 +49,25 @@ async function request(endpoint, options = {}) {
     const contentType = response.headers.get("content-type");
     let data;
 
-    // Check if response is JSON
-    if (contentType && contentType.includes("application/json")) {
+    const isJsonBody =
+      contentType &&
+      (contentType.includes("application/json") || contentType.includes("application/problem+json"));
+
+    if (isJsonBody) {
       data = await response.json();
     } else {
-      // If not JSON, try to parse as text and throw error
       const text = await response.text();
-      throw new Error(`Expected JSON but got: ${text.substring(0, 100)}`);
+      throw new Error(text ? text.substring(0, 200) : `API error: ${response.status}`);
     }
 
     if (response.ok) {
+      if (data && data.success === false) {
+        throw new Error(formatApiError(data, response.status));
+      }
       return data;
     }
 
-    // Handle API errors
-    throw new Error(data.message || `API error: ${response.status}`);
+    throw new Error(formatApiError(data, response.status));
   } catch (error) {
     console.error(`API Request Error [${method} ${endpoint}]:`, error);
     throw error;
