@@ -189,9 +189,7 @@ const EMPTY_FORM = {
   priceBeforeTax: "",
   vat: "0",
   cost: "",
-  stock: "0",
   tonKhoHienTai: "0",
-  stockAdd: "0",
   tonKhoHienTaiAdd: "0",
   tonKhoToiThieu: "0",
   tonKhoToiDa: "999999999",
@@ -442,7 +440,6 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
           const giaNhap = row["Giá nhập"] || row["GiaNhap"] || row["cost"] || 0;
           const giaBanLe = row["Giá bán lẻ"] || row["GiaBanLe"] || row["priceBeforeTax"] || 0;
           const vat = row["VAT"] || row["vat"] || row["thue"] || 0;
-          const soLuong = row["Số lượng"] || row["SoLuong"] || row["stock"] || 0;
           const tonKho = row["Tồn kho"] || row["TonKho"] || row["inventory"] || 0;
           const tonToiThieu = row["Tồn tối thiểu"] || row["TonToiThieu"] || row["minStock"] || 0;
           const tonToiDa = row["Tồn tối đa"] || row["TonToiDa"] || row["maxStock"] || 999999999;
@@ -495,7 +492,6 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
             giaNhapGanNhat: Number(giaNhap) || 0,
             giaBanLe: Number(giaBanLe) || 0,
             thue: Number(vat) || 0,
-            soLuong: Number(soLuong) || 0,
             tonKhoHienTai: Number(tonKho) || 0,
             tonKhoToiThieu: Number(tonToiThieu) || 0,
             tonKhoToiDa: Number(tonToiDa) || 999999999,
@@ -542,7 +538,6 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
         "Giá nhập": 5000,
         "Giá bán lẻ": 8000,
         "VAT": 10,
-        "Số lượng": 1000,
         "Tồn kho": 500,
         "Tồn tối thiểu": 100,
         "Tồn tối đa": 5000
@@ -556,7 +551,6 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
         "Giá nhập": 70000,
         "Giá bán lẻ": 85000,
         "VAT": 8,
-        "Số lượng": 200,
         "Tồn kho": 150,
         "Tồn tối thiểu": 50,
         "Tồn tối đa": 1000
@@ -691,7 +685,7 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
                       <TableHead>Nhóm hàng</TableHead>
                       <TableHead>Đơn vị</TableHead>
                       <TableHead>Giá bán</TableHead>
-                      <TableHead>Số lượng</TableHead>
+                      <TableHead>Tồn kho</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -706,7 +700,7 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
                         <TableCell className="text-right">
                           {new Intl.NumberFormat("vi-VN").format(item.giaBanLe)}đ
                         </TableCell>
-                        <TableCell className="text-right">{item.soLuong}</TableCell>
+                        <TableCell className="text-right">{item.tonKhoHienTai}</TableCell>
                       </TableRow>
                     ))}
                     {previewData.length > 10 && (
@@ -783,13 +777,11 @@ function resolveVatPercentFromApi(p) {
 }
 
 function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) {
-  const stock = p.soLuong ?? 0;
-  const currentInventory = p.tonKhoHienTai ?? 0;
-  const totalStock = stock + currentInventory;
+  const currentInventory = Number(p.tonKhoHienTai ?? p.TonKhoHienTai ?? 0);
   
   let status = "active";
-  if (totalStock <= 0) status = "out_of_stock";
-  else if (totalStock <= 100) status = "low_stock";
+  if (currentInventory <= 0) status = "out_of_stock";
+  else if (currentInventory <= 100) status = "low_stock";
 
   const vatPercent = resolveVatPercentFromApi(p);
   const rawDonVi = String(p.donViChinh ?? p.DonViChinh ?? "").trim();
@@ -823,15 +815,14 @@ function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) 
     maDanhMuc: toSelectIdString(maDanhMuc),
     maThuongHieu: p.maThuongHieu ?? p.MaThuongHieu ?? "",
     category,
-    price: p.giaSauThue,
-    priceBeforeTax: p.giaBanLe,
+    price: Number(p.giaSauThue ?? p.GiaSauThue ?? 0),
+    priceBeforeTax: Number(p.giaBanLe ?? p.GiaBanLe ?? 0),
     thue: vatPercent,
     vat: vatPercent,
-    cost: p.giaNhapGanNhat,
-    stock: p.soLuong,
-    tonKhoHienTai: p.tonKhoHienTai,
-    tonKhoToiThieu: p.tonKhoToiThieu,
-    tonKhoToiDa: p.tonKhoToiDa,
+    cost: Number(p.giaNhapGanNhat ?? p.GiaNhapGanNhat ?? 0),
+    tonKhoHienTai: currentInventory,
+    tonKhoToiThieu: Number(p.tonKhoToiThieu ?? p.TonKhoToiThieu ?? 0),
+    tonKhoToiDa: Number(p.tonKhoToiDa ?? p.TonKhoToiDa ?? 0),
     unit: unitForSelect,
     donViChinh: unitForSelect || rawDonVi,
     maNccMacDinh: toSelectIdString(maNccMacDinh),
@@ -985,9 +976,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
         priceBeforeTax: String(product.priceBeforeTax ?? ""),
         vat: vatStr,
         cost: String(product.cost ?? ""),
-        stock: String(product.stock ?? "0"),
-        tonKhoHienTai: String(product.tonKhoHienTai ?? product.stock ?? "0"),
-        stockAdd: "0",
+        tonKhoHienTai: String(product.tonKhoHienTai ?? "0"),
         tonKhoHienTaiAdd: "0",
         tonKhoToiThieu: String(product.tonKhoToiThieu ?? "0"),
         tonKhoToiDa: String(product.tonKhoToiDa ?? "999999999"),
@@ -1023,7 +1012,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
 
   const set = (key) => (e) => {
     let value = e.target.value;
-    if (["stockAdd", "tonKhoHienTaiAdd"].includes(key) && Number(value) < 0) value = "0";
+    if (key === "tonKhoHienTaiAdd" && Number(value) < 0);
     if (key === "tonKhoToiThieu" && Number(value) < 0) value = "0";
     if (key === "tonKhoToiDa" && Number(value) > 999999999) value = "999999999";
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -1061,13 +1050,11 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     if (!trimUnit(form.unit)) errors.push("Đơn vị tính không được để trống");
     if (isCreate && isBlank(form.cost)) errors.push("Giá vốn không được để trống");
     if (isBlank(form.priceBeforeTax)) errors.push("Giá bán trước thuế không được để trống");
-    if (isCreate && isBlank(form.stock)) errors.push("Số lượng không được để trống");
     if (isCreate && isBlank(form.tonKhoHienTai)) errors.push("Tồn kho không được để trống");
     if (isCreate && isBlank(form.tonKhoToiThieu)) errors.push("Tồn thấp nhất không được để trống");
     if (isCreate && isBlank(form.tonKhoToiDa)) errors.push("Tồn cao nhất không được để trống");
     if (!isBlank(form.cost) && Number(form.cost) < 0) errors.push("Giá vốn không được âm");
     if (!isBlank(form.priceBeforeTax) && Number(form.priceBeforeTax) <= 0) errors.push("Giá bán trước thuế phải > 0");
-    if (!isBlank(form.stock) && Number(form.stock) < 0) errors.push("Số lượng không được âm");
     if (!isBlank(form.tonKhoHienTai) && Number(form.tonKhoHienTai) < 0) errors.push("Tồn kho không được âm");
     if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
     if (!isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < 0) errors.push("Tồn cao nhất không được âm");
@@ -1086,10 +1073,8 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     }
 
     const isEdit = Boolean(product);
-    const stockAdd = Number(form.stockAdd ?? 0) || 0;
-    const stockFinal = isEdit ? (Number(product?.stock ?? 0) || 0) + stockAdd : Number(form.stock) || 0;
     const tonKhoAdd = Number(form.tonKhoHienTaiAdd ?? 0) || 0;
-    const tonKhoFinal = isEdit ? (Number(product?.tonKhoHienTai ?? product?.stock ?? 0) || 0) + tonKhoAdd : Number(form.tonKhoHienTai) || 0;
+    const tonKhoFinal = isEdit ? (Number(product?.tonKhoHienTai ?? 0) || 0) + tonKhoAdd : Number(form.tonKhoHienTai) || 0;
 
     onSave({
       name: form.name.trim(),
@@ -1098,9 +1083,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
       priceBeforeTax: Number(form.priceBeforeTax) || 0,
       vat: Number(form.vat) || 0,
       cost: Number(form.cost) || 0,
-      stock: stockFinal,
       tonKhoHienTai: tonKhoFinal,
-      stockAdd,
       tonKhoHienTaiAdd: tonKhoAdd,
       tonKhoToiThieu: Number(form.tonKhoToiThieu) || 0,
       tonKhoToiDa: Number(form.tonKhoToiDa) || 999999999,
@@ -1111,7 +1094,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     });
   };
 
-  const displayedStock = product ? String(Number(form.stock) + (Number(form.stockAdd) || 0)) : form.stock;
   const displayedTonKhoHienTai = product ? String(Number(form.tonKhoHienTai) + (Number(form.tonKhoHienTaiAdd) || 0)) : form.tonKhoHienTai;
   const vatSelectValue = VAT_SELECT_VALUES.has(form.vat) ? form.vat : "0";
   const categoryKnown = danhMucs.some((d) => String(d.maDanhMuc) === form.maDanhMuc);
@@ -1278,18 +1260,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
             <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">{product ? "Số lượng hiện tại" : "Số lượng *"}</Label>
-                  <Input
-                    type="number"
-                    value={displayedStock}
-                    onChange={set("stock")}
-                    className={cn("h-10", product && "bg-muted/60 text-muted-foreground cursor-not-allowed")}
-                    readOnly={!!product}
-                    disabled={!!product}
-                    required={!product}
-                  />
-                </div>
-                <div className="space-y-1.5">
                   <Label className="text-sm font-medium">{product ? "Tồn kho hiện tại" : "Tồn kho *"}</Label>
                   <Input
                     type="number"
@@ -1301,12 +1271,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                     required={!product}
                   />
                 </div>
-                {product && (
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Số lượng cần thêm</Label>
-                    <Input type="number" min="0" value={form.stockAdd} onChange={set("stockAdd")} className="h-10" />
-                  </div>
-                )}
                 {product && (
                   <div className="space-y-1.5">
                     <Label className="text-sm font-medium">Tồn kho cần thêm</Label>
@@ -1535,7 +1499,6 @@ export function ProductTable() {
             giaBanLe: product.giaBanLe || 0,
             thue: product.thue || 0,
             giaSauThue: Math.round((product.giaBanLe || 0) * (1 + (product.thue || 0) / 100)),
-            soLuong: product.soLuong || 0,
             tonKhoHienTai: product.tonKhoHienTai || 0,
             tonKhoToiThieu: product.tonKhoToiThieu || 0,
             tonKhoToiDa: product.tonKhoToiDa || 999999999,
@@ -1621,7 +1584,6 @@ export function ProductTable() {
         giaBanLe: Number(formData.priceBeforeTax) || 0,
         thue: Number(formData.vat) || 0,
         giaSauThue: Number(formData.price) || 0,
-        soLuong: Number(formData.stock) || 0,
         tonKhoHienTai: Number(formData.tonKhoHienTai) || 0,
         tonKhoToiThieu: Number(formData.tonKhoToiThieu) || 0,
         tonKhoToiDa: Number(formData.tonKhoToiDa) || 0,
@@ -1629,9 +1591,8 @@ export function ProductTable() {
       };
 
       if (isEdit) {
-        const soLuongNhap = Number(formData.stockAdd) || 0;
         const tonKhoNhap = Number(formData.tonKhoHienTaiAdd) || 0;
-        const shouldImportMore = soLuongNhap > 0 || tonKhoNhap > 0;
+        const shouldImportMore = tonKhoNhap > 0;
 
         if (shouldImportMore) {
           if (!formData.maNccMacDinh) throw new Error("Vui lòng chọn nhà cung cấp mặc định để nhập thêm hàng.");
@@ -1639,7 +1600,6 @@ export function ProductTable() {
             maNhaCungCap: Number(formData.maNccMacDinh),
             maSanPham: Number(formData.id),
             sanPham: { maSanPham: Number(formData.id), ...payload },
-            soLuongNhap,
             tonKhoNhap,
             donGiaNhap: Number(formData.cost) || 0,
             maKho: 1,
@@ -1687,12 +1647,12 @@ export function ProductTable() {
 
   const totalProducts = products.length;
   const lowStockCount = products.filter(p => {
-    const totalStock = (p.stock || 0) + (p.tonKhoHienTai || 0);
-    return totalStock > 0 && totalStock <= 100;
+    const currentInventory = p.tonKhoHienTai || 0;
+    return currentInventory > 0 && currentInventory <= 100;
   }).length;
   const outOfStockCount = products.filter(p => {
-    const totalStock = (p.stock || 0) + (p.tonKhoHienTai || 0);
-    return totalStock <= 0;
+    const currentInventory = p.tonKhoHienTai || 0;
+    return currentInventory <= 0;
   }).length;
 
   if (loading) return (
@@ -1880,7 +1840,6 @@ export function ProductTable() {
               <TableHead>Danh mục</TableHead>
               <TableHead className="text-right">Giá nhập</TableHead>
               <TableHead className="text-right">Giá bán</TableHead>
-              <TableHead className="text-right">Số lượng</TableHead>
               <TableHead className="text-right">Tồn kho</TableHead>
               <TableHead>Trạng thái</TableHead>
               <TableHead className="w-8" />
@@ -1889,7 +1848,7 @@ export function ProductTable() {
           <TableBody>
             {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-40 text-center">
+                <TableCell colSpan={8} className="h-40 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Package className="h-8 w-8 opacity-40" />
                     <p className="text-sm">Không tìm thấy sản phẩm</p>
@@ -1911,7 +1870,6 @@ export function ProductTable() {
                       <TableCell>{product.category}</TableCell>
                       <TableCell className="text-right text-muted-foreground tabular-nums">{formatPrice(product.cost)}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{formatPrice(product.price)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{product.stock.toLocaleString("vi-VN")} {displayProductUnit(product)}</TableCell>
                       <TableCell className="text-right tabular-nums">{product.tonKhoHienTai.toLocaleString("vi-VN")} {displayProductUnit(product)}</TableCell>
                       <TableCell>
                         <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", status.className)}>
@@ -1925,7 +1883,7 @@ export function ProductTable() {
 
                     {isExpanded && (
                       <TableRow className="hover:bg-transparent">
-                        <TableCell colSpan={9} className="p-0">
+                        <TableCell colSpan={8} className="p-0">
                           <div className="border-t bg-muted/10 px-6 py-5">
                             <Tabs key={product.id} defaultValue="product-info">
                               <TabsList className="h-9 rounded-lg bg-muted/60 p-1">

@@ -5,6 +5,7 @@ import ProductsPage from "@/app/admin/products/page";
 import CategoriesPage from "@/app/admin/categories/page";
 import CustomersPage from "@/app/admin/customers/page";
 import InvoicesPage from "@/app/admin/invoices/page";
+import PurchaseOrdersPage from "@/app/admin/purchase-orders/page";
 import SuppliersPage from "@/app/admin/suppliers/page";
 import ReportsPage from "@/app/admin/reports/page";
 import SettingsPage from "@/app/admin/settings/page";
@@ -42,6 +43,11 @@ function App() {
       <Route path="/admin/invoices" element={<RequireAuth>
             <AdminLayout>
               <InvoicesPage />
+            </AdminLayout>
+          </RequireAuth>}/>
+      <Route path="/admin/purchase-orders" element={<RequireAuth>
+            <AdminLayout>
+              <PurchaseOrdersPage />
             </AdminLayout>
           </RequireAuth>}/>
       <Route path="/admin/suppliers" element={<RequireAuth>
