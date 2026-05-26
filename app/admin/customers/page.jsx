@@ -459,14 +459,14 @@ export default function CustomersPage() {
 
     const formFields = (
       <div className="space-y-4">
-        {!isEdit && (
+        {/* {!isEdit && (
           <div className="space-y-1.5">
             <Label htmlFor={`${mode}-code`} className="text-sm font-medium">Mã khách hàng</Label>
             <Input id={`${mode}-code`} value={formData.maKhachHang}
               onChange={(e) => updateFormField("maKhachHang", e.target.value)}
               placeholder="Nhập mã" required className="h-10" />
           </div>
-        )}
+        )} */}
         <div className="space-y-1.5">
           <Label htmlFor={`${mode}-name`} className="text-sm font-medium">Tên khách hàng <span className="text-destructive">*</span></Label>
           <Input id={`${mode}-name`} value={formData.hoTen}
