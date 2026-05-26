@@ -28,34 +28,35 @@ import { InvoiceService } from "@/src/services/api-services";
 
 function mapDonHang(d) {
   const statusMap = {
-    da_thanh_toan:      "completed",
-    chua_thanh_toan:    "pending",
-    thanh_toan_mot_phan:"partial",
-    tra_mot_phan:       "partial",
+    da_thanh_toan: "completed",
+    chua_thanh_toan: "pending",
+    thanh_toan_mot_phan: "partial",
+    tra_mot_phan: "partial",
   };
+  const isRetailCustomer = !d.tenKhachHang;
 
   return {
-    id:            `HD${String(d.maDonHang).padStart(3, "0")}`,
-    customerCode:  d.maKhachHang ? String(d.maKhachHang) : "--",
-    customer:      d.tenKhachHang,
-    createdAt:     new Date(d.ngayTao).toLocaleString("vi-VN", {
+    id: `HD${String(d.maDonHang).padStart(3, "0")}`,
+    customerCode: d.maKhachHang ? String(d.maKhachHang) : "--",
+    customer: isRetailCustomer ? "Khách lẻ" : (d.tenKhachHang || "Khách lẻ"),
+    createdAt: new Date(d.ngayTao).toLocaleString("vi-VN", {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     }),
-    total:         Number(d.tongTien ?? 0),
-    amountPaid:    Number(d.khachDaTra ?? 0),
+    total: Number(d.tongTien ?? 0),
+    amountPaid: Number(d.khachDaTra ?? 0),
     paymentMethod: d.hinhThuc ? "Chuyển khoản" : "Tiền mặt",
-    status:        statusMap[d.trangThaiThanhToan] ?? "pending",
-    createdBy:     d.tenNguoiTao,
-    itemCount:     d.chiTietHoaDonDtos?.length ?? 0,
-    chiTiet:       d.chiTietHoaDonDtos ?? [],
+    status: statusMap[d.trangThaiThanhToan] ?? "pending",
+    createdBy: d.tenNguoiTao,
+    itemCount: d.chiTietHoaDonDtos?.length ?? 0,
+    chiTiet: d.chiTietHoaDonDtos ?? [],
   };
 }
 
 const statusConfig = {
-  completed: { label: "Hoàn thành",           className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-  pending:   { label: "Chưa thanh toán",      className: "bg-destructive/10 text-destructive border-destructive/20" },
-  partial:   { label: "Thanh toán một phần",  className: "bg-amber-100 text-amber-700 border-amber-200" },
+  completed: { label: "Hoàn thành", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  pending: { label: "Chưa thanh toán", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  partial: { label: "Thanh toán một phần", className: "bg-amber-100 text-amber-700 border-amber-200" },
 };
 
 const formatCurrency = (amount) =>
@@ -156,7 +157,7 @@ function exportToExcel(invoices) {
         for (let col = 0; col < 10; col++) {
           merges.push({
             s: { r: startRow, c: col },
-            e: { r: endRow,   c: col },
+            e: { r: endRow, c: col },
           });
         }
       }
@@ -166,7 +167,7 @@ function exportToExcel(invoices) {
   // Bước 2: tạo worksheet từ aoa
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!merges"] = merges;
-  ws["!cols"]   = COL_WIDTHS.map((wch) => ({ wch }));
+  ws["!cols"] = COL_WIDTHS.map((wch) => ({ wch }));
 
   // Bước 3: style header (bold, bg) — xlsx cơ bản không hỗ trợ style,
   // nhưng nếu dùng xlsx-js-style có thể thêm sau.
@@ -175,7 +176,7 @@ function exportToExcel(invoices) {
   XLSX.utils.book_append_sheet(wb, ws, "Hoá đơn");
 
   const now = new Date();
-  const ts  = [
+  const ts = [
     now.getDate().toString().padStart(2, "0"),
     (now.getMonth() + 1).toString().padStart(2, "0"),
     now.getFullYear(),
@@ -187,13 +188,13 @@ function exportToExcel(invoices) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
-  const [invoices,        setInvoices]        = useState([]);
-  const [loading,         setLoading]         = useState(true);
-  const [error,           setError]           = useState(null);
-  const [search,          setSearch]          = useState("");
-  const [statusFilter,    setStatusFilter]    = useState("all");
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [drawerOpen,      setDrawerOpen]      = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Fetch
   useEffect(() => {
@@ -229,7 +230,7 @@ export default function InvoicesPage() {
   } = usePagination(filteredInvoices, 10);
 
   // Summary
-  const totalRevenue    = invoices.filter((i) => i.status === "completed").reduce((s, i) => s + i.total, 0);
+  const totalRevenue = invoices.filter((i) => i.status === "completed").reduce((s, i) => s + i.total, 0);
   const pendingInvoices = invoices.filter((i) => i.status === "pending").length;
   const partialInvoices = invoices.filter((i) => i.status === "partial").length;
 
@@ -390,8 +391,13 @@ export default function InvoicesPage() {
                       {invoice.itemCount}
                     </span>
                   </TableCell>
-                  <TableCell className="font-medium">{invoice.customer}</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">
+                  <TableCell className="font-medium">
+                    {invoice.customer === "Khách lẻ" ? (
+                      <div className="flex items-center gap-2">
+                        <span>{invoice.customer}</span>
+                      </div>
+                    ) : invoice.customer}
+                  </TableCell>                  <TableCell className="text-right font-semibold tabular-nums">
                     {formatCurrency(invoice.total)}
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums">
