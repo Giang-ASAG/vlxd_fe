@@ -14,7 +14,6 @@ import {
   Search, X, Plus, Minus, Trash2, CreditCard, Banknote,
   ArrowLeft, User, ShoppingCart, Package, UserCheck,
   AlertCircle, Loader2, RefreshCw, CheckCircle2, Printer,
-  Warehouse,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
@@ -58,12 +57,9 @@ function mapCustomer(c) {
   };
 }
 
-/**
- * Tính trạng thái tồn kho dựa trên tổng tồn kho (soLuong + tonKhoHienTai)
- */
-function getStockStatus(totalStock) {
-  if (totalStock <= 0) return { label: "Hết hàng", className: "bg-destructive/10 text-destructive border-destructive/20" };
-  if (totalStock <= 100) return { label: "Sắp hết", className: "bg-amber-100 text-amber-700 border-amber-200" };
+function getStockStatus(currentInventory) {
+  if (currentInventory <= 0) return { label: "Hết hàng", className: "bg-destructive/10 text-destructive border-destructive/20" };
+  if (currentInventory <= 100) return { label: "Sắp hết", className: "bg-amber-100 text-amber-700 border-amber-200" };
   return { label: "Còn hàng", className: "bg-emerald-100 text-emerald-700 border-emerald-200" };
 }
 
@@ -92,10 +88,6 @@ export default function POSPage() {
   const [linePriceEdit, setLinePriceEdit] = useState(null);
   const [qtyEdit, setQtyEdit] = useState(null);
 
-  // ── Cảnh báo tồn kho ─────────────────────────────────────────────────────
-  const [stockWarningOpen, setStockWarningOpen] = useState(false);
-  const [stockWarningItems, setStockWarningItems] = useState([]);
-
   const searchRef = useRef(null);
   const customerInputRef = useRef(null);
 
@@ -116,9 +108,7 @@ export default function POSPage() {
 
       setProducts(
         (spJson?.data ?? []).map((p) => {
-          const stock = toNumber(p.soLuong ?? 0);
           const currentInventory = toNumber(p.tonKhoHienTai ?? 0);
-          const totalStock = stock + currentInventory;
 
           return {
             id: toText(p.maSanPham),
@@ -128,10 +118,9 @@ export default function POSPage() {
             cost: toNumber(p.giaNhapGanNhat),
             unit: toText(p.donViChinh) || "",
             category: dmMap[p.maDanhMuc] ?? "Khác",
-            stock,           // soLuong — tồn kệ (shelf)
-            tonKhoHienTai: currentInventory,  // tồn kho (warehouse)
-            totalStock,
-            status: getStockStatus(totalStock),
+            tonKhoHienTai: currentInventory,
+            totalStock: currentInventory,
+            status: getStockStatus(currentInventory),
           };
         })
       );
@@ -241,8 +230,6 @@ export default function POSPage() {
           ...product,
           quantity: 1,
           maxStock: product.totalStock,
-          // Giữ lại stock (tồn kệ) và tonKhoHienTai (kho) để kiểm tra sau
-          stock: product.stock,
           tonKhoHienTai: product.tonKhoHienTai,
         },
       ];
@@ -301,31 +288,10 @@ export default function POSPage() {
 
   const session = getSession();
 
-  // ── Kiểm tra tồn kho trước khi mở thanh toán ─────────────────────────────
-  /**
-   * Các item cần lấy thêm từ kho = item.quantity > item.stock (tồn kệ)
-   * Phần thiếu = item.quantity - item.stock → lấy từ item.tonKhoHienTai
-   */
   const handleCheckoutIntent = useCallback(() => {
     if (cart.length === 0) return;
-
-    const needWarehouse = cart.filter(
-      (item) => item.quantity > (item.stock ?? 0)
-    );
-
-    if (needWarehouse.length > 0) {
-      setStockWarningItems(needWarehouse);
-      setStockWarningOpen(true);
-    } else {
-      setCheckoutOpen(true);
-    }
-  }, [cart]);
-
-  /** Người dùng đồng ý lấy hàng từ kho bù vào */
-  const handleWarehouseConfirm = () => {
-    setStockWarningOpen(false);
     setCheckoutOpen(true);
-  };
+  }, [cart]);
 
   // ── Gửi đơn hàng ─────────────────────────────────────────────────────────
   const handleCheckout = async () => {
@@ -607,19 +573,10 @@ export default function POSPage() {
                     <div className="sr-only">Thao tác</div>
                   </div>
 
-                  {cart.map((item) => {
-                    const needsWarehouse = item.quantity > (item.stock ?? 0);
-                    const warehouseNeeded = needsWarehouse
-                      ? item.quantity - (item.stock ?? 0)
-                      : 0;
-
-                    return (
+                  {cart.map((item) => (
                       <div
                         key={item.id}
-                        className={cn(
-                          "grid gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center hover:bg-muted/30 transition-colors",
-                          needsWarehouse && "bg-amber-50/50 dark:bg-amber-950/10"
-                        )}
+                        className="grid gap-3 px-4 py-3 border-b border-border last:border-b-0 items-center hover:bg-muted/30 transition-colors"
                         style={{ gridTemplateColumns: "minmax(0,1.4fr) 144px 100px 148px 112px 40px" }}
                       >
                         {/* Tên */}
@@ -631,14 +588,8 @@ export default function POSPage() {
                             <p className="font-medium text-sm leading-snug line-clamp-2">{item.name}</p>
                             <p className="text-xs text-muted-foreground truncate">{item.sku}</p>
                             <p className="text-[10px] text-muted-foreground mt-0.5">
-                              Tồn kệ: {item.stock ?? 0} · Kho: {item.tonKhoHienTai ?? 0} {item.unit}
+                              Tồn kho: {item.tonKhoHienTai ?? 0} {item.unit}
                             </p>
-                            {needsWarehouse && (
-                              <p className="text-[10px] text-amber-600 font-medium mt-0.5 flex items-center gap-1">
-                                <Warehouse className="h-3 w-3 shrink-0" />
-                                Cần lấy {warehouseNeeded} {item.unit} từ kho
-                              </p>
-                            )}
                           </div>
                         </div>
 
@@ -718,8 +669,7 @@ export default function POSPage() {
                           </Button>
                         </div>
                       </div>
-                    );
-                  })}
+                  ))}
                 </div>
               </div>
             </div>
@@ -846,7 +796,6 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* ── Nút thanh toán: gọi handleCheckoutIntent thay vì setCheckoutOpen ── */}
           <Button
             size="lg"
             className="w-full h-14 text-lg gap-2 bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent/70 text-accent-foreground shadow-md rounded-xl"
@@ -858,86 +807,6 @@ export default function POSPage() {
           </Button>
         </div>
       </div>
-
-      {/* ── Dialog cảnh báo tồn kho ──────────────────────────────────────────── */}
-      <Dialog
-        open={stockWarningOpen}
-        onOpenChange={(o) => { if (!o) setStockWarningOpen(false); }}
-      >
-        <DialogContent className="sm:max-w-[480px] rounded-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-amber-600">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100">
-                <Warehouse className="h-5 w-5 text-amber-600" />
-              </div>
-              Cần lấy hàng từ kho
-            </DialogTitle>
-            <DialogDescription>
-              Một số sản phẩm vượt quá tồn kệ, cần bù thêm từ kho để đủ số lượng.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3 my-2">
-            {/* Danh sách sản phẩm cần lấy từ kho */}
-            <div className="rounded-xl border overflow-hidden">
-              <div className="grid grid-cols-3 gap-2 px-3 py-2 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
-                <div className="col-span-1">Sản phẩm</div>
-                <div className="text-center">Tồn kệ / Đặt</div>
-                <div className="text-right">Cần lấy kho</div>
-              </div>
-              <div className="divide-y max-h-56 overflow-auto">
-                {stockWarningItems.map((item) => {
-                  const shelfStock = item.stock ?? 0;
-                  const needed = item.quantity - shelfStock;
-                  return (
-                    <div
-                      key={item.id}
-                      className="grid grid-cols-3 gap-2 px-3 py-3 items-center text-sm"
-                    >
-                      <div className="col-span-1 min-w-0">
-                        <p className="font-medium truncate leading-snug">{item.name}</p>
-                        <p className="text-xs text-muted-foreground">{item.sku}</p>
-                      </div>
-                      <div className="text-center">
-                        <span className="text-muted-foreground font-mono">{shelfStock}</span>
-                        <span className="text-muted-foreground mx-1">/</span>
-                        <span className="font-semibold font-mono">{item.quantity}</span>
-                        <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 text-xs font-semibold font-mono">
-                          +{needed} {item.unit}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground bg-muted/40 rounded-xl px-4 py-3 border">
-              Bạn có muốn xuất hàng từ kho để bù vào đơn này không?
-            </p>
-          </div>
-
-          <div className="flex gap-3 mt-1">
-            <Button
-              variant="outline"
-              className="flex-1 h-11 rounded-xl"
-              onClick={() => setStockWarningOpen(false)}
-            >
-              Không đồng ý
-            </Button>
-            <Button
-              className="flex-1 h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white gap-2 shadow-sm"
-              onClick={handleWarehouseConfirm}
-            >
-              <Warehouse className="h-4 w-4" />
-              Đồng ý, lấy từ kho
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* ── Dialog thanh toán ─────────────────────────────────────────────── */}
       <Dialog

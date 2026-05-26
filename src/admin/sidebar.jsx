@@ -3,7 +3,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { 
   LayoutDashboard, Package, Users, FileText, Truck, BarChart3, 
-  Settings, ChevronLeft, ChevronRight, Store, LogOut, Tag 
+  Settings, ChevronLeft, ChevronRight, Store, LogOut, Tag, PackagePlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ const navigation = [
   { name: "Danh mục", href: "/admin/categories", icon: Tag },
   { name: "Khách hàng", href: "/admin/customers", icon: Users },
   { name: "Hóa đơn", href: "/admin/invoices", icon: FileText },
+  { name: "Nhập hàng", href: "/admin/purchase-orders", icon: PackagePlus },
   { name: "Nhà cung cấp", href: "/admin/suppliers", icon: Truck },
   { name: "Báo cáo", href: "/admin/reports", icon: BarChart3 },
 ];

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef, useMemo } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -71,7 +71,7 @@ function Toast({ message, type, onClose }) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { tenNcc: "", soDienThoai: "", email: "", diaChi: "", ghiChu: "", selectedProductIds: [] };
+const EMPTY_FORM = { tenNcc: "", soDienThoai: "", email: "", diaChi: "", ghiChu: "" };
 const EMPTY_PAY_DIALOG = { open: false, items: [], amount: "", method: "Chuyển khoản", note: "" };
 const PAYMENT_METHODS = ["Chuyển khoản", "Tiền mặt"];
 
@@ -99,7 +99,6 @@ function createFormData(s) {
     email: s?.email ?? "",
     diaChi: s?.address ?? "",
     ghiChu: s?.ghiChu ?? "",
-    selectedProductIds: s?.selectedProductIds ?? [],
   };
 }
 
@@ -118,33 +117,14 @@ function getInitials(name) {
   return name.trim().split(/\s+/).map((w) => w[0]).slice(-2).join("").toUpperCase();
 }
 
-function getProductId(p) {
-  return String(p?.maSanPham ?? p?.MaSanPham ?? p?.id ?? "");
-}
-
-function getProductSupplierId(p) {
-  const raw = p?.maNccMacDinh ?? p?.maNcc ?? p?.MaNccMacDinh ?? p?.MaNcc;
-  if (raw == null || raw === "" || raw === 0 || raw === "0") return null;
-  return String(raw);
-}
-
-function isProductLinkedToSupplier(p) {
-  return getProductSupplierId(p) != null;
-}
-
 function getMaNguoiLap() {
   const session = getSession();
   const n = Number(session?.user?.sub);
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-function toProductIdList(ids) {
-  if (!Array.isArray(ids)) return [];
-  return [...new Set(ids.map((id) => Number(id)).filter((n) => Number.isFinite(n) && n > 0))];
-}
-
 /** Payload khớp schema POST/PUT /NhaCungCaps */
-function buildSupplierPayload(formData, productIds = []) {
+function buildSupplierPayload(formData) {
   return {
     tenNcc: formData.tenNcc.trim(),
     soDienThoai: formData.soDienThoai.trim(),
@@ -152,7 +132,6 @@ function buildSupplierPayload(formData, productIds = []) {
     email: formData.email.trim(),
     ghiChu: formData.ghiChu.trim(),
     maNguoiLap: getMaNguoiLap(),
-    selectedProductIds: toProductIdList(productIds),
   };
 }
 
@@ -263,15 +242,15 @@ function SupplierProductsTab({ supplierId }) {
                   <TableCell className="text-right">
                     <span className={cn(
                       "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
-                      p.soLuong <= p.tonKhoHienTai
+                      p.tonKhoHienTai <= p.tonKhoToiThieu
                         ? "bg-destructive/10 text-destructive"
                         : "bg-emerald-100 text-emerald-700"
                     )}>
-                      {p.soLuong} {p.donViChinh}
+                      {p.tonKhoHienTai} {p.donViChinh}
                     </span>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums">
-                    {p.tonKhoHienTai}
+                    {p.tonKhoToiThieu}
                   </TableCell>
                 </TableRow>
               ))}
@@ -282,10 +261,10 @@ function SupplierProductsTab({ supplierId }) {
 
       {list.length > 0 && (
         <div className="rounded-lg bg-muted/20 px-4 py-2.5">
-          {list.filter((p) => p.soLuong <= p.tonKhoHienTai).length > 0 && (
+          {list.filter((p) => p.tonKhoHienTai <= p.tonKhoToiThieu).length > 0 && (
             <span className="flex items-center gap-1 text-xs text-destructive">
               <AlertCircle className="h-3.5 w-3.5" />
-              {list.filter((p) => p.soLuong <= p.tonKhoHienTai).length} sản phẩm dưới mức tồn tối thiểu
+              {list.filter((p) => p.tonKhoHienTai <= p.tonKhoToiThieu).length} sản phẩm dưới mức tồn tối thiểu
             </span>
           )}
         </div>
@@ -328,176 +307,6 @@ function StatusBadge({ value, labelMap, colorMap }) {
     <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", cls)}>
       {label}
     </span>
-  );
-}
-
-// ─── Product Picker Field ─────────────────────────────────────────────────────
-
-function ProductPickerField({ allProducts, selectedIds, onChange, loading, existingProductIds = [] }) {
-  const [search, setSearch] = useState("");
-  const [open, setOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setOpen(false);
-        setSearch("");
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const existingSet = useMemo(
-    () => new Set(existingProductIds.map((id) => String(id))),
-    [existingProductIds]
-  );
-
-  const selectableProducts = useMemo(
-    () => allProducts.filter((p) => !existingSet.has(getProductId(p))),
-    [allProducts, existingSet]
-  );
-
-  const filtered = selectableProducts.filter((p) =>
-    (p.tenSanPham ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (p.maSku ?? "").toLowerCase().includes(search.toLowerCase())
-  );
-
-  const selectedIdSet = useMemo(() => new Set(selectedIds.map(String)), [selectedIds]);
-  const selectedProducts = allProducts.filter((p) => selectedIdSet.has(getProductId(p)));
-
-  const toggle = (id) => {
-    const sid = String(id);
-    onChange(
-      selectedIdSet.has(sid)
-        ? selectedIds.filter((x) => String(x) !== sid)
-        : [...selectedIds, Number(id) || id]
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      {/* Dropdown trigger */}
-      <div className="relative" ref={dropdownRef}>
-        <button
-          type="button"
-          onClick={() => setOpen((p) => !p)}
-          className={cn(
-            "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors",
-            "hover:border-primary focus:outline-none focus:ring-2 focus:ring-ring",
-            open && "border-primary ring-2 ring-ring"
-          )}
-        >
-          <span className={selectedIds.length === 0 ? "text-muted-foreground" : "font-medium"}>
-            {selectedIds.length === 0
-              ? "Chọn sản phẩm cung cấp..."
-              : `${selectedIds.length} sản phẩm đã chọn`}
-          </span>
-          <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
-        </button>
-
-        {open && (
-          <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border bg-popover shadow-lg">
-            {/* Search */}
-            <div className="border-b p-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  autoFocus
-                  type="text"
-                  placeholder="Tìm sản phẩm..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-            </div>
-
-            {/* List */}
-            <div className="max-h-56 overflow-y-auto">
-              {loading ? (
-                <div className="flex h-16 items-center justify-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-xs">Đang tải...</span>
-                </div>
-              ) : selectableProducts.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground">
-                  Không còn sản phẩm chưa liên kết nhà cung cấp
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground">Không tìm thấy sản phẩm</div>
-              ) : filtered.map((p) => {
-                const productId = getProductId(p);
-                const checked = selectedIdSet.has(productId);
-                return (
-                  <button
-                    key={productId}
-                    type="button"
-                    onClick={() => toggle(productId)}
-                    className={cn(
-                      "flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-muted/50",
-                      checked && "bg-primary/5"
-                    )}
-                  >
-                    <div className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                      checked ? "border-primary bg-primary" : "border-input"
-                    )}>
-                      {checked && <CheckCircle className="h-3 w-3 text-primary-foreground" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{p.tenSanPham}</p>
-                      <p className="text-muted-foreground">{p.maSku} · {p.donViChinh}</p>
-                    </div>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {formatCurrencyVN(p.giaNhapGanNhat)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Footer */}
-            {filtered.length > 0 && (
-              <div className="flex items-center justify-between border-t bg-muted/20 px-3 py-2">
-                <span className="text-xs text-muted-foreground">{selectedIds.length} đã chọn</span>
-                {selectedIds.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onChange([])}
-                    className="text-xs text-destructive hover:underline"
-                  >
-                    Bỏ chọn tất cả
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Selected chips */}
-      {selectedProducts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {selectedProducts.map((p) => (
-            <span
-              key={p.maSanPham}
-              className="inline-flex items-center gap-1 rounded-full border bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary"
-            >
-              {p.tenSanPham}
-              <button
-                type="button"
-                onClick={() => toggle(p.maSanPham)}
-                className="ml-0.5 rounded-full hover:text-destructive"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -848,88 +657,7 @@ export default function SuppliersPage() {
   const showToast = (message, type = "success") => {
     setToast({ message, type });
   };
-  // Thêm vào sau const [purchaseHistoryLoading, ...]
-  const [allProducts, setAllProducts] = useState([]);
-  const [allProductsLoading, setAllProductsLoading] = useState(false);
-  const [supplierExistingProductIds, setSupplierExistingProductIds] = useState({});
-  const [supplierProductsLoading, setSupplierProductsLoading] = useState(false);
-  const [globalLinkedProductIds, setGlobalLinkedProductIds] = useState(null);
-  const [globalLinkedProductsLoading, setGlobalLinkedProductsLoading] = useState(false);
-
   // ─── API ────────────────────────────────────────────────────────────────────
-  const fetchAllProducts = async () => {
-    if (allProducts.length > 0) return;
-    setAllProductsLoading(true);
-    try {
-      const res = await ProductService.getAll();
-      setAllProducts(res?.data ?? []);
-    } catch {
-      setAllProducts([]);
-    } finally {
-      setAllProductsLoading(false);
-    }
-  };
-
-  const fetchSupplierExistingProducts = async (supplierId) => {
-    if (!supplierId) return;
-    setSupplierProductsLoading(true);
-    try {
-      const res = await ProductService.getBySupplierId(supplierId);
-      const ids = (res?.data ?? []).map(getProductId).filter(Boolean);
-      setSupplierExistingProductIds((prev) => ({ ...prev, [supplierId]: ids }));
-    } catch {
-      setSupplierExistingProductIds((prev) => ({ ...prev, [supplierId]: [] }));
-    } finally {
-      setSupplierProductsLoading(false);
-    }
-  };
-
-  const fetchGlobalLinkedProductIds = async () => {
-    setGlobalLinkedProductsLoading(true);
-    try {
-      let products = allProducts;
-      if (!products.length) {
-        const res = await ProductService.getAll();
-        products = res?.data ?? [];
-        setAllProducts(products);
-      }
-
-      const linked = new Set();
-      products.forEach((p) => {
-        if (isProductLinkedToSupplier(p)) {
-          const pid = getProductId(p);
-          if (pid) linked.add(pid);
-        }
-      });
-
-      const supplierIds = suppliers.map((s) => s.id).filter(Boolean);
-      if (supplierIds.length) {
-        const results = await Promise.all(
-          supplierIds.map((id) =>
-            ProductService.getBySupplierId(id).catch(() => ({ data: [] }))
-          )
-        );
-        results.forEach((res) => {
-          (res?.data ?? []).forEach((p) => {
-            const pid = getProductId(p);
-            if (pid) linked.add(pid);
-          });
-        });
-      }
-
-      setGlobalLinkedProductIds([...linked]);
-    } catch {
-      setGlobalLinkedProductIds([]);
-    } finally {
-      setGlobalLinkedProductsLoading(false);
-    }
-  };
-
-  const invalidateGlobalLinkedProducts = () => {
-    setGlobalLinkedProductIds(null);
-    setAllProducts([]);
-  };
-
   const fetchSuppliers = async () => {
     try {
       setLoading(true);
@@ -951,7 +679,6 @@ export default function SuppliersPage() {
         };
       }));
       setError(null);
-      invalidateGlobalLinkedProducts();
     } catch (err) {
       setError("Không thể tải danh sách nhà cung cấp. Vui lòng kiểm tra kết nối API.");
     } finally {
@@ -996,18 +723,6 @@ export default function SuppliersPage() {
 
   useEffect(() => { fetchSuppliers(); }, []);
 
-  useEffect(() => {
-    if (!expandedId) return;
-    fetchAllProducts();
-    fetchSupplierExistingProducts(expandedId);
-  }, [expandedId]);
-
-  useEffect(() => {
-    if (!addFormOpen || loading) return;
-    fetchAllProducts();
-    fetchGlobalLinkedProductIds();
-  }, [addFormOpen, loading, suppliers]);
-
   // ─── Form ────────────────────────────────────────────────────────────────────
 
   const updateFormField = (field, value) => setFormData((p) => ({ ...p, [field]: value }));
@@ -1034,11 +749,8 @@ export default function SuppliersPage() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const res = await SupplierService.create(
-        buildSupplierPayload(formData, formData.selectedProductIds)
-      );
+      const res = await SupplierService.create(buildSupplierPayload(formData));
       await fetchSuppliers();
-      invalidateGlobalLinkedProducts();
       resetForm();
       setAddFormOpen(false);
       const msg = res?.error?.message ?? `Thêm nhà cung cấp "${formData.tenNcc}" thành công!`;
@@ -1055,15 +767,9 @@ export default function SuppliersPage() {
     try {
       const res = await SupplierService.update(
         supplierId,
-        buildSupplierPayload(formData, formData.selectedProductIds)
+        buildSupplierPayload(formData)
       );
       await fetchSuppliers();
-      invalidateGlobalLinkedProducts();
-      setSupplierExistingProductIds((prev) => {
-        const next = { ...prev };
-        delete next[supplierId];
-        return next;
-      });
       setExpandedId(null);
       resetForm();
       const msg = res?.error?.message ?? `Cập nhật nhà cung cấp "${formData.tenNcc}" thành công!`;
@@ -1131,8 +837,7 @@ export default function SuppliersPage() {
             email: supplier.email || "",
             diaChi: supplier.diaChi || "",
             ghiChu: supplier.ghiChu || "",
-            selectedProductIds: [],
-          }, []));
+          }));
           successCount++;
           existingSupplierNames.add(supplier.tenNcc.toLowerCase().trim());
         } catch (err) {
@@ -1243,12 +948,6 @@ export default function SuppliersPage() {
 
   const renderSupplierForm = (mode, supplier) => {
     const isEdit = mode === "edit";
-    const existingProductIds = isEdit && supplier
-      ? (supplierExistingProductIds[supplier.id] ?? [])
-      : (globalLinkedProductIds ?? []);
-    const productsPickerLoading = allProductsLoading
-      || (isEdit && supplierProductsLoading)
-      || (!isEdit && globalLinkedProductsLoading);
     return (
       <form onSubmit={(e) => isEdit && supplier ? handleSaveSupplier(e, supplier.id) : handleSaveNewSupplier(e)}
         className="space-y-4">
@@ -1272,16 +971,6 @@ export default function SuppliersPage() {
             <Label className="text-sm font-medium">Địa chỉ</Label>
             <Input value={formData.diaChi} onChange={(e) => updateFormField("diaChi", e.target.value)}
               placeholder="Nhập địa chỉ" className="h-10" />
-          </div>
-          <div className="space-y-1.5 md:col-span-2">
-            <Label className="text-sm font-medium">Sản phẩm cung cấp</Label>
-            <ProductPickerField
-              allProducts={allProducts}
-              selectedIds={formData.selectedProductIds}
-              onChange={(ids) => updateFormField("selectedProductIds", ids)}
-              loading={productsPickerLoading}
-              existingProductIds={existingProductIds}
-            />
           </div>
           <div className="space-y-1.5 md:col-span-2">
             <Label className="text-sm font-medium">Ghi chú</Label>
@@ -1527,8 +1216,6 @@ export default function SuppliersPage() {
                             <TabsContent value="san-pham" className="mt-4">
                               <SupplierProductsTab
                                 supplierId={supplier.id}
-                                allProducts={allProducts}
-                                allProductsLoading={allProductsLoading}
                               />
                             </TabsContent>
 
