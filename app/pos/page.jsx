@@ -336,7 +336,7 @@ export default function POSPage() {
       const payload = {
         donHang: {
           maDonHang: 0,
-          maKhachHang: selectedCustomer ? Number(selectedCustomer.id) : 1,
+          maKhachHang: selectedCustomer ? Number(selectedCustomer.id) : 0,
           maNguoiTao: session.user?.sub ? Number(session.user.sub) : 1,
           ngayTao: new Date().toISOString(),
           tongTien: total,
@@ -381,7 +381,6 @@ export default function POSPage() {
     setCheckoutOpen(false);
     setCheckoutSuccess(false);
     setSearch("");
-    setSelectedCategory("Tất cả");
     setCustomerQuery("");
     setSelectedCustomerId("");
     setAmountPaid("");
@@ -548,48 +547,6 @@ export default function POSPage() {
           </div>
         </header>
 
-        {/* Category Filter Bar */}
-        {!loadingData && products.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-4 pt-4 border-b pb-3">
-            {categories.slice(0, 8).map((cat) => (
-              <Button
-                key={cat}
-                variant={selectedCategory === cat ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat)}
-                className="text-sm rounded-full px-4 h-8"
-              >
-                {cat}
-              </Button>
-            ))}
-            {categories.length > 8 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCategoryFilter(!showCategoryFilter)}
-                className="text-sm rounded-full px-4 h-8"
-              >
-                {showCategoryFilter ? "Thu gọn" : "Xem thêm"}
-              </Button>
-            )}
-          </div>
-        )}
-
-        {showCategoryFilter && categories.length > 8 && (
-          <div className="flex flex-wrap gap-2 px-4 pt-2 pb-3 border-b">
-            {categories.slice(8).map((cat) => (
-              <Button
-                key={cat}
-                variant={selectedCategory === cat ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedCategory(cat)}
-                className="text-sm rounded-full px-4 h-8"
-              >
-                {cat}
-              </Button>
-            ))}
-          </div>
-        )}
 
         {/* Thông báo lỗi fetch */}
         {fetchError && (

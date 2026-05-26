@@ -263,7 +263,7 @@ function SupplierProductsTab({ supplierId }) {
                   <TableCell className="text-right">
                     <span className={cn(
                       "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
-                      p.soLuong <= p.tonKhoToiThieu
+                      p.soLuong <= p.tonKhoHienTai
                         ? "bg-destructive/10 text-destructive"
                         : "bg-emerald-100 text-emerald-700"
                     )}>
@@ -271,7 +271,7 @@ function SupplierProductsTab({ supplierId }) {
                     </span>
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums">
-                    {p.tonKhoToiThieu}
+                    {p.tonKhoHienTai}
                   </TableCell>
                 </TableRow>
               ))}
@@ -282,10 +282,10 @@ function SupplierProductsTab({ supplierId }) {
 
       {list.length > 0 && (
         <div className="rounded-lg bg-muted/20 px-4 py-2.5">
-          {list.filter((p) => p.soLuong <= p.tonKhoToiThieu).length > 0 && (
+          {list.filter((p) => p.soLuong <= p.tonKhoHienTai).length > 0 && (
             <span className="flex items-center gap-1 text-xs text-destructive">
               <AlertCircle className="h-3.5 w-3.5" />
-              {list.filter((p) => p.soLuong <= p.tonKhoToiThieu).length} sản phẩm dưới mức tồn tối thiểu
+              {list.filter((p) => p.soLuong <= p.tonKhoHienTai).length} sản phẩm dưới mức tồn tối thiểu
             </span>
           )}
         </div>
