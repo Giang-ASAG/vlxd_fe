@@ -4,11 +4,17 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   AlertCircle, ChevronDown, Copy, Download, Edit3, FileText,
-  Filter, Loader2, MoreHorizontal, Plus, Printer, Search, Trash2,
+  Filter, Loader2, MoreHorizontal, Plus, Printer, Search, Save, X,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -16,6 +22,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { normalizePrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -38,11 +45,27 @@ function formatCurrency(amount) {
 
 function formatDateTime(value) {
   if (!value) return "--";
+
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "--";
-  return date.toLocaleString("vi-VN", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toDateTimeLocalValue(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDateTimeLocalValue(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function mapDonHang(order) {
@@ -52,10 +75,13 @@ function mapDonHang(order) {
     thanh_toan_mot_phan: "partial",
     tra_mot_phan: "partial",
   };
+  
   const details = order?.chiTietHoaDonDtos ?? order?.chiTiet ?? [];
   const total = toNumber(order?.tongTien);
-  const paid = toNumber(order?.khachDaTra);
+  const paid = toNumber(order?.soTienTra ?? order?.khachDaTra);
   const id = order?.maDonHang ?? order?.id ?? "";
+  const createdAt = order?.ngayTao ?? order?.ngayBan ?? order?.createdAt;
+  const paymentMethod = order?.hinhThuc === true ? "Chuyển khoản" : "Tiền mặt";
 
   return {
     raw: order,
@@ -66,8 +92,9 @@ function mapDonHang(order) {
     customer: order?.tenKhachHang || "Khách lẻ",
     phone: order?.soDienThoai ?? order?.sdt ?? "",
     address: order?.diaChi ?? order?.diaChiGiaoHang ?? "",
-    createdAt: order?.ngayTao,
-    createdAtLabel: formatDateTime(order?.ngayTao),
+    note: order?.ghiChu ?? "",
+    createdAt,
+    createdAtLabel: formatDateTime(createdAt),
     total,
     discount: toNumber(order?.giamGia ?? order?.giamGiaHoaDon),
     paid,
@@ -77,7 +104,7 @@ function mapDonHang(order) {
     seller: order?.tenNguoiBan ?? order?.tenNguoiTao ?? "--",
     channel: order?.kenhBan ?? "Bán trực tiếp",
     priceBook: order?.bangGia ?? "Bảng giá chung",
-    paymentMethod: order?.hinhThuc ? "Chuyển khoản" : "Tiền mặt",
+    paymentMethod,
     details,
   };
 }
@@ -112,10 +139,14 @@ function exportToExcel(invoices) {
         "Thời gian": invoice.createdAtLabel,
         "Mã KH": invoice.customerCode,
         "Khách hàng": invoice.customer,
+        "Số điện thoại": invoice.phone,
+        "Địa chỉ": invoice.address,
         "Tổng tiền hàng": invoice.total,
         "Giảm giá": invoice.discount,
         "Khách đã trả": invoice.paid,
+        "Công nợ": invoice.debt,
         "Trạng thái": statusConfig[invoice.status].label,
+        "Ghi chú": invoice.note,
       }];
     }
 
@@ -124,6 +155,8 @@ function exportToExcel(invoices) {
       "Thời gian": invoice.createdAtLabel,
       "Mã KH": invoice.customerCode,
       "Khách hàng": invoice.customer,
+      "Số điện thoại": invoice.phone,
+      "Địa chỉ": invoice.address,
       "STT SP": index + 1,
       "Mã hàng": itemCode(item),
       "Tên hàng": itemName(item),
@@ -133,7 +166,9 @@ function exportToExcel(invoices) {
       "Tổng tiền hàng": invoice.total,
       "Giảm giá": invoice.discount,
       "Khách đã trả": invoice.paid,
+      "Công nợ": invoice.debt,
       "Trạng thái": statusConfig[invoice.status].label,
+      "Ghi chú": invoice.note,
     }));
   });
 
@@ -143,7 +178,351 @@ function exportToExcel(invoices) {
   XLSX.writeFile(wb, "hoa-don.xlsx");
 }
 
-function InvoiceDetail({ invoice }) {
+function createInvoiceText(invoice) {
+  const lines = [
+    `Hóa đơn: ${invoice.code}`,
+    `Ngày bán: ${invoice.createdAtLabel}`,
+    `Khách hàng: ${invoice.customer}`,
+    invoice.phone ? `SĐT: ${invoice.phone}` : "",
+    invoice.address ? `Địa chỉ: ${invoice.address}` : "",
+    `Thanh toán: ${invoice.paymentMethod}`,
+    "",
+    "Hàng hóa:",
+    ...invoice.details.map((item, index) => `${index + 1}. ${itemName(item)} - SL: ${itemQty(item)} - Đơn giá: ${formatCurrency(itemUnitPrice(item))} - Thành tiền: ${formatCurrency(itemTotal(item))}`),
+    "",
+    `Tổng tiền hàng: ${formatCurrency(invoice.total)}`,
+    `Giảm giá: ${formatCurrency(invoice.discount)}`,
+    `Khách cần trả: ${formatCurrency(invoice.total - invoice.discount)}`,
+    `Khách đã trả: ${formatCurrency(invoice.paid)}`,
+    invoice.note ? `\nGhi chú: ${invoice.note}` : "",
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
+function createPrintDraftFromInvoice(invoice) {
+  return normalizePrintDraft({
+    template: "invoice",
+    invoiceCode: invoice.code,
+    deliveryCode: invoice.returnCode || `PXK-${invoice.id}`,
+    createdAt: invoice.createdAtLabel,
+    paymentMethod: invoice.paymentMethod,
+    createdBy: invoice.createdBy,
+    cashierName: invoice.seller,
+    receiverName: invoice.customer,
+    customerSignerName: invoice.customer,
+    customerName: invoice.customer,
+    customerPhone: invoice.phone,
+    customerAddress: invoice.address,
+    discount: invoice.discount,
+    amountPaid: invoice.paid,
+    items: invoice.details.map((item, index) => ({
+      id: `${invoice.id}-${index}`,
+      name: itemName(item),
+      unit: item?.donViTinh ?? item?.unit ?? "",
+      quantity: itemQty(item),
+      price: itemUnitPrice(item),
+    })),
+  });
+}
+
+// ============= COMPONENT INLINE DATE EDITOR =============
+function InlineDateEditor({ invoice, onUpdate }) {
+  const [dateValue, setDateValue] = useState(toDateTimeLocalValue(invoice.createdAt));
+  const [originalValue, setOriginalValue] = useState(toDateTimeLocalValue(invoice.createdAt));
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const handleDateChange = (e) => {
+    let newDateValue = e.target.value;
+    
+    const selectedDateStr = newDateValue.split('T')[0];
+    const selectedDate = new Date(selectedDateStr);
+    const today = new Date();
+    
+    if (selectedDate.toDateString() === today.toDateString()) {
+      const hours = String(today.getHours()).padStart(2, '0');
+      const minutes = String(today.getMinutes()).padStart(2, '0');
+      newDateValue = `${selectedDateStr}T${hours}:${minutes}`;
+      setDateValue(newDateValue);
+    } else {
+      setDateValue(newDateValue);
+    }
+    
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    const nextDate = fromDateTimeLocalValue(dateValue);
+    if (!nextDate) return;
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...invoice.raw,
+        ngayTao: nextDate,
+      };
+
+      if (InvoiceService.update) {
+        await InvoiceService.update(invoice.id, payload);
+      }
+      
+      window.location.reload();
+      
+    } catch (err) {
+      console.error("Update failed:", err);
+      setDateValue(originalValue);
+      setSaving(false);
+      setIsDirty(false);
+      alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
+    }
+  };
+
+  const handleCancel = () => {
+    setDateValue(originalValue);
+    setIsDirty(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="datetime-local"
+        value={dateValue}
+        onChange={handleDateChange}
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-md border border-input bg-background px-2 py-1 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        disabled={saving}
+      />
+      {isDirty && (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleSave}
+            disabled={saving}
+            className="h-7 px-2 text-xs"
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Lưu"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleCancel}
+            disabled={saving}
+            className="h-7 px-2 text-xs"
+          >
+            Hủy
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+// ========================================================
+
+// ============= FORM CHỈNH SỬA HÓA ĐƠN =============
+function EditInvoiceForm({ invoice, onSave, onCancel }) {
+  const [formData, setFormData] = useState({
+    tenKhachHang: invoice.customer,
+    soDienThoai: invoice.phone,
+    diaChi: invoice.address,
+    ghiChu: invoice.note,
+    soTienTra: invoice.paid,
+    hinhThuc: invoice.paymentMethod === "Chuyển khoản",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSoTienTraChange = (e) => {
+    let value = e.target.value;
+    // Xóa số 0 ở đầu nếu có
+    if (value.startsWith('0') && value.length > 1) {
+      value = value.replace(/^0+/, '');
+    }
+    // Nếu là chuỗi rỗng thì set thành 0
+    if (value === '') {
+      value = '0';
+    }
+    handleChange("soTienTra", toNumber(value));
+  };
+
+  const handleSoTienTraFocus = (e) => {
+    // Khi focus vào, nếu giá trị là 0 thì xóa đi
+    if (e.target.value === '0' || e.target.value === 0) {
+      handleChange("soTienTra", '');
+    }
+  };
+
+  const handleSoTienTraBlur = (e) => {
+    // Khi blur ra, nếu trống thì set lại 0
+    if (e.target.value === '' || e.target.value === undefined) {
+      handleChange("soTienTra", 0);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      // Tính toán lại trạng thái thanh toán dựa trên số tiền đã trả
+      const totalAfterDiscount = invoice.total; // Bỏ giảm giá
+      let trangThaiThanhToan = "chua_thanh_toan";
+      
+      if (formData.soTienTra >= totalAfterDiscount) {
+        trangThaiThanhToan = "da_thanh_toan";
+      } else if (formData.soTienTra > 0) {
+        trangThaiThanhToan = "thanh_toan_mot_phan";
+      }
+
+      const payload = {
+        maDonHang: Number(invoice.id),
+        maKhachHang: invoice.raw?.maKhachHang || 0,
+        maNguoiTao: invoice.raw?.maNguoiTao || 0,
+        ngayTao: invoice.raw?.ngayTao,
+        tongTien: invoice.total,
+        trangThaiThanhToan: trangThaiThanhToan,
+        hinhThuc: formData.hinhThuc,
+        soTienTra: formData.soTienTra,
+        // Thêm các trường mở rộng
+        tenKhachHang: formData.tenKhachHang,
+        soDienThoai: formData.soDienThoai,
+        diaChi: formData.diaChi,
+        ghiChu: formData.ghiChu,
+      };
+
+      if (InvoiceService.update) {
+        await InvoiceService.update(invoice.id, payload);
+      }
+      
+      onSave();
+      window.location.reload();
+      
+    } catch (err) {
+      console.error("Update failed:", err);
+      alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const totalAfterDiscount = invoice.total; // Bỏ giảm giá
+  const debt = Math.max(0, totalAfterDiscount - formData.soTienTra);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="tenKhachHang">Tên khách hàng</Label>
+          <Input
+            id="tenKhachHang"
+            value={formData.tenKhachHang}
+            onChange={(e) => handleChange("tenKhachHang", e.target.value)}
+            placeholder="Nhập tên khách hàng"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="soDienThoai">Số điện thoại</Label>
+          <Input
+            id="soDienThoai"
+            value={formData.soDienThoai}
+            onChange={(e) => handleChange("soDienThoai", e.target.value)}
+            placeholder="Nhập số điện thoại"
+          />
+        </div>
+        
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="diaChi">Địa chỉ</Label>
+          <Input
+            id="diaChi"
+            value={formData.diaChi}
+            onChange={(e) => handleChange("diaChi", e.target.value)}
+            placeholder="Nhập địa chỉ"
+          />
+        </div>
+        
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="ghiChu">Ghi chú</Label>
+          <Textarea
+            id="ghiChu"
+            value={formData.ghiChu}
+            onChange={(e) => handleChange("ghiChu", e.target.value)}
+            placeholder="Nhập ghi chú (nếu có)"
+            rows={3}
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="soTienTra">Khách đã trả</Label>
+          <Input
+            id="soTienTra"
+            type="number"
+            value={formData.soTienTra}
+            onChange={handleSoTienTraChange}
+            onFocus={handleSoTienTraFocus}
+            onBlur={handleSoTienTraBlur}
+            placeholder="0"
+            className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="hinhThuc">Phương thức thanh toán</Label>
+          <Select 
+            value={formData.hinhThuc ? "chuyen_khoan" : "tien_mat"} 
+            onValueChange={(v) => handleChange("hinhThuc", v === "chuyen_khoan")}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tien_mat">Tiền mặt</SelectItem>
+              <SelectItem value="chuyen_khoan">Chuyển khoản</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      
+      <div className="rounded-lg bg-muted/30 p-4">
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="font-medium">Tổng tiền hàng:</span>
+            <span className="font-semibold">{formatCurrency(invoice.total)}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="font-medium">Khách cần trả:</span>
+            <span className="font-bold text-primary">{formatCurrency(totalAfterDiscount)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-medium">Khách đã trả:</span>
+            <span className="font-semibold text-emerald-600">{formatCurrency(formData.soTienTra)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-medium">Công nợ:</span>
+            <span className={cn("font-semibold", debt > 0 ? "text-red-600" : "text-emerald-600")}>
+              {formatCurrency(debt)}
+            </span>
+          </div>
+        </div>
+      </div>
+      
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel} disabled={saving}>
+          <X className="mr-2 h-4 w-4" />
+          Hủy
+        </Button>
+        <Button onClick={handleSubmit} disabled={saving}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Lưu thay đổi
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+// ========================================================
+function InvoiceDetail({ invoice, onCopy, onPrint, onUpdateInvoice, onEditInvoice }) {
   return (
     <TableRow className="bg-background hover:bg-background">
       <TableCell colSpan={9} className="border-x border-b border-primary/30 p-0">
@@ -159,7 +538,7 @@ function InvoiceDetail({ invoice }) {
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xl font-bold">{invoice.customer}</span>
-                <span className="font-mono text-sm text-muted-foreground">{invoice.code}</span>
+                <span className="font-mono text-sm text-primary">{invoice.code}</span>
                 <Badge variant="outline" className={cn("border", statusConfig[invoice.status].className)}>
                   {statusConfig[invoice.status].label}
                 </Badge>
@@ -176,7 +555,10 @@ function InvoiceDetail({ invoice }) {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Ngày bán</p>
-                  <p className="font-medium">{invoice.createdAtLabel}</p>
+                  <InlineDateEditor 
+                    invoice={invoice} 
+                    onUpdate={onUpdateInvoice}
+                  />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Kênh bán</p>
@@ -190,13 +572,29 @@ function InvoiceDetail({ invoice }) {
                   <p className="text-xs text-muted-foreground">Thanh toán</p>
                   <p className="font-medium">{invoice.paymentMethod}</p>
                 </div>
+                {invoice.phone && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Số điện thoại</p>
+                    <p className="font-medium">{invoice.phone}</p>
+                  </div>
+                )}
+                {invoice.address && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Địa chỉ</p>
+                    <p className="font-medium">{invoice.address}</p>
+                  </div>
+                )}
+                {invoice.note && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Ghi chú</p>
+                    <p className="font-medium italic">{invoice.note}</p>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="text-right">
               <p className="text-sm font-semibold">Chi nhánh trung tâm</p>
-              <p className="mt-2 text-xs text-muted-foreground">{invoice.customerCode}</p>
-              {invoice.phone && <p className="text-xs text-muted-foreground">{invoice.phone}</p>}
             </div>
           </div>
 
@@ -208,8 +606,6 @@ function InvoiceDetail({ invoice }) {
                   <TableHead>Tên hàng</TableHead>
                   <TableHead className="text-right">Số lượng</TableHead>
                   <TableHead className="text-right">Đơn giá</TableHead>
-                  <TableHead className="text-right">Giảm giá</TableHead>
-                  <TableHead className="text-right">Giá bán</TableHead>
                   <TableHead className="text-right">Thành tiền</TableHead>
                 </TableRow>
               </TableHeader>
@@ -224,8 +620,6 @@ function InvoiceDetail({ invoice }) {
                     <TableCell className="max-w-[420px] font-medium">{itemName(item)}</TableCell>
                     <TableCell className="text-right tabular-nums">{itemQty(item)}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatCurrency(itemUnitPrice(item))}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(item?.giamGia)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(itemUnitPrice(item))}</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(itemTotal(item))}</TableCell>
                   </TableRow>
                 ))}
@@ -233,39 +627,56 @@ function InvoiceDetail({ invoice }) {
             </Table>
           </div>
 
-          {invoice.address && (
-            <p className="text-sm text-muted-foreground">Địa chỉ mới: {invoice.address}</p>
-          )}
-
-          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-            <div className="flex flex-wrap items-center gap-2 self-end">
-              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground"><Trash2 className="h-4 w-4" /> Hủy</Button>
-              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground"><Copy className="h-4 w-4" /> Sao chép</Button>
-              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={() => exportToExcel([invoice])}><Download className="h-4 w-4" /> Xuất file</Button>
-            </div>
-            <div className="space-y-2 text-sm">
+          <div className="flex justify-end border-t pt-6">
+            <div className="w-full max-w-[420px] space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Tổng tiền hàng ({invoice.details.reduce((s, item) => s + itemQty(item), 0)})</span>
-                <span className="font-semibold tabular-nums">{formatCurrency(invoice.total)}</span>
+                <span className="text-muted-foreground">
+                  Tổng tiền hàng (
+                  {invoice.details.reduce((s, item) => s + itemQty(item), 0)})
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {formatCurrency(invoice.total)}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Giảm giá hóa đơn</span>
-                <span className="tabular-nums">{formatCurrency(invoice.discount)}</span>
+                <span className="text-muted-foreground">Giảm giá</span>
+                <span className="font-semibold text-red-600 tabular-nums">
+                  -{formatCurrency(invoice.discount)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="font-semibold">Khách cần trả</span>
-                <span className="font-semibold tabular-nums">{formatCurrency(invoice.total - invoice.discount)}</span>
+                <span className="font-semibold tabular-nums">
+                  {formatCurrency(invoice.total - invoice.discount)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Khách đã trả</span>
-                <span className="font-semibold text-primary tabular-nums">{formatCurrency(invoice.paid)}</span>
+                <span className="font-semibold text-emerald-600 tabular-nums">
+                  {formatCurrency(invoice.paid)}
+                </span>
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="font-semibold">Công nợ</span>
+                <span className={cn("font-semibold tabular-nums", invoice.debt > 0 ? "text-red-600" : "text-emerald-600")}>
+                  {formatCurrency(invoice.debt)}
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t pt-4">
-            <Button variant="outline" className="gap-2"><Printer className="h-4 w-4" /> In</Button>
-            <Button className="gap-2"><Edit3 className="h-4 w-4" /> Chỉnh sửa</Button>
+          <div className="flex justify-between gap-2 border-t pt-4">
+            <div className="flex flex-wrap items-center gap-2 self-end">
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground"><Trash2 className="h-4 w-4" /> Hủy</Button>
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={() => onCopy(invoice)}><Copy className="h-4 w-4" /> Sao chép</Button>
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={() => exportToExcel([invoice])}><Download className="h-4 w-4" /> Xuất file</Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 self-end">
+              <Button variant="outline" className="gap-2" onClick={() => onPrint(invoice)}><Printer className="h-4 w-4" /> In</Button>
+              <Button className="gap-2" onClick={() => onEditInvoice(invoice)}>
+                <Edit3 className="h-4 w-4" /> Chỉnh sửa
+              </Button>
+            </div>
           </div>
         </div>
       </TableCell>
@@ -280,6 +691,8 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
+  const [actionMessage, setActionMessage] = useState(null);
+  const [editDialog, setEditDialog] = useState({ open: false, invoice: null });
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -305,7 +718,8 @@ export default function InvoicesPage() {
       const matchesSearch = !q ||
         invoice.code.toLowerCase().includes(q) ||
         invoice.customer.toLowerCase().includes(q) ||
-        invoice.customerCode.toLowerCase().includes(q);
+        invoice.customerCode.toLowerCase().includes(q) ||
+        invoice.phone.toLowerCase().includes(q);
       const matchesStatus = statusFilter === "all" || invoice.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -319,7 +733,48 @@ export default function InvoicesPage() {
     amount: filteredInvoices.reduce((sum, invoice) => sum + invoice.total, 0),
     discount: filteredInvoices.reduce((sum, invoice) => sum + invoice.discount, 0),
     paid: filteredInvoices.reduce((sum, invoice) => sum + invoice.paid, 0),
+    debt: filteredInvoices.reduce((sum, invoice) => sum + invoice.debt, 0),
   }), [filteredInvoices]);
+
+  const showActionMessage = (type, text) => {
+    setActionMessage({ type, text });
+    window.setTimeout(() => setActionMessage(null), 3000);
+  };
+
+  const handleCopyInvoice = async (invoice) => {
+    try {
+      await navigator.clipboard.writeText(createInvoiceText(invoice));
+      showActionMessage("success", `Đã sao chép ${invoice.code}`);
+    } catch {
+      showActionMessage("error", "Trình duyệt không cho phép sao chép tự động");
+    }
+  };
+
+  const handlePrintInvoice = (invoice) => {
+    window.localStorage.setItem(POS_PRINT_DRAFT_KEY, JSON.stringify(createPrintDraftFromInvoice(invoice)));
+    const printWindow = window.open("/pos/print", "_blank");
+    if (!printWindow) window.location.assign("/pos/print");
+  };
+
+  const handleUpdateInvoice = (updatedInvoice) => {
+    setInvoices((items) => 
+      items.map((item) => item.id === updatedInvoice.id ? updatedInvoice : item)
+    );
+    showActionMessage("success", `Đã cập nhật ngày bán ${updatedInvoice.code}`);
+  };
+
+  const openEditDialog = (invoice) => {
+    setEditDialog({ open: true, invoice });
+  };
+
+  const closeEditDialog = () => {
+    setEditDialog({ open: false, invoice: null });
+  };
+
+  const handleSaveEdit = () => {
+    closeEditDialog();
+    showActionMessage("success", `Đã cập nhật thông tin hóa đơn ${editDialog.invoice?.code}`);
+  };
 
   if (loading) return (
     <div className="flex h-96 items-center justify-center gap-3 text-muted-foreground">
@@ -355,12 +810,24 @@ export default function InvoicesPage() {
         </div>
       </div>
 
+      {actionMessage && (
+        <div className={cn(
+          "rounded-md border px-4 py-3 text-sm",
+          actionMessage.type === "error"
+            ? "border-destructive/20 bg-destructive/10 text-destructive"
+            : "border-emerald-200 bg-emerald-50 text-emerald-700"
+        )}
+        >
+          {actionMessage.text}
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 rounded-lg border bg-card p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div className="relative max-w-xl flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Theo mã hóa đơn, tên khách hàng hoặc mã KH..."
+            placeholder="Theo mã hóa đơn, tên khách hàng, SĐT hoặc mã KH..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -390,8 +857,8 @@ export default function InvoicesPage() {
               <TableHead>Mã KH</TableHead>
               <TableHead>Khách hàng</TableHead>
               <TableHead className="text-right">Tổng tiền hàng</TableHead>
-              <TableHead className="text-right">Giảm giá</TableHead>
               <TableHead className="text-right">Khách đã trả</TableHead>
+              <TableHead className="text-right">Công nợ</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -403,12 +870,12 @@ export default function InvoicesPage() {
               <TableCell></TableCell>
               <TableCell></TableCell>
               <TableCell className="text-right tabular-nums">{formatCurrency(totals.amount)}</TableCell>
-              <TableCell className="text-right tabular-nums">{formatCurrency(totals.discount)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatCurrency(totals.paid)}</TableCell>
+              <TableCell className="text-right tabular-nums">{formatCurrency(totals.debt)}</TableCell>
             </TableRow>
             {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="h-36 text-center">
+                <TableCell colSpan={10} className="h-36 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <FileText className="h-8 w-8 opacity-40" />
                     <p className="text-sm">Không tìm thấy hóa đơn</p>
@@ -422,16 +889,26 @@ export default function InvoicesPage() {
                   onClick={() => setExpandedId((id) => id === invoice.id ? null : invoice.id)}
                 >
                   <TableCell><ChevronDown className={cn("h-4 w-4 transition-transform", expandedId === invoice.id && "rotate-180")} /></TableCell>
-                  <TableCell className="font-semibold">{invoice.code}</TableCell>
+                  <TableCell className="font-semibold text-primary">{invoice.code}</TableCell>
                   <TableCell className="text-muted-foreground">{invoice.createdAtLabel}</TableCell>
-                  <TableCell>{invoice.returnCode || "--"}</TableCell>
+                  <TableCell>{invoice.returnCode || ""}</TableCell>
                   <TableCell className="font-mono text-xs">{invoice.customerCode}</TableCell>
                   <TableCell className="font-medium">{invoice.customer}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(invoice.total)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(invoice.discount)}</TableCell>
                   <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(invoice.paid)}</TableCell>
+                  <TableCell className={cn("text-right font-semibold tabular-nums", invoice.debt > 0 ? "text-red-600" : "text-emerald-600")}>
+                    {formatCurrency(invoice.debt)}
+                  </TableCell>
                 </TableRow>
-                {expandedId === invoice.id && <InvoiceDetail invoice={invoice} />}
+                {expandedId === invoice.id && (
+                  <InvoiceDetail
+                    invoice={invoice}
+                    onCopy={handleCopyInvoice}
+                    onPrint={handlePrintInvoice}
+                    onUpdateInvoice={handleUpdateInvoice}
+                    onEditInvoice={openEditDialog}
+                  />
+                )}
               </Fragment>
             ))}
           </TableBody>
@@ -444,6 +921,26 @@ export default function InvoicesPage() {
         </p>
         <PaginationWrapper currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
       </div>
+
+      {/* Dialog chỉnh sửa hóa đơn */}
+      <Dialog open={editDialog.open} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa hóa đơn</DialogTitle>
+            <DialogDescription>
+              Cập nhật thông tin hóa đơn {editDialog.invoice?.code ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {editDialog.invoice && (
+            <EditInvoiceForm
+              invoice={editDialog.invoice}
+              onSave={handleSaveEdit}
+              onCancel={closeEditDialog}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

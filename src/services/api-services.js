@@ -52,19 +52,7 @@ export const CategoryService = {
 };
 
 const UNIT_STORAGE_KEY = "vlxd_units";
-const DEFAULT_UNITS = [
-  "Bao",
-  "Cây",
-  "Viên",
-  "Khối",
-  "Thùng",
-  "Cuộn",
-  "Cái",
-  "Mét",
-  "M3",
-  "Tờ",
-  "Lon",
-];
+const DEFAULT_UNITS = [];
 
 function loadUnits() {
   if (typeof window === "undefined") return DEFAULT_UNITS;
@@ -229,6 +217,7 @@ export const InvoiceService = {
    * Lấy danh sách hoá đơn
    */
   getAll: () => api.get("/DonHangs/HoaDon"),
+  update: (id, data) => api.put(`/DonHangs/${id}`, data),
 };
 export const CongNoNccService = {
   getBySupplier: (supplierId) => api.get(`/CongNoNccs/nha-cung-cap/${supplierId}`),
@@ -242,4 +231,3 @@ export const CongNoKhachHangService = {
   getByCustomer: (customerId) =>
     api.get(`/CongNoKhachHang/khach-hang/${customerId}?pageNumber=1&pageSize=20`),
 };
-

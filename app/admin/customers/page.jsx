@@ -879,7 +879,7 @@ export default function CustomersPage() {
                                                 </TableRow>
                                               ) : history.map((record, idx) => (
                                                 <TableRow key={idx} className="text-sm hover:bg-muted/30">
-                                                  <TableCell className="font-medium">{record.maDonHang}</TableCell>
+                                                  <TableCell className="font-medium">{record.maDonHang && `HD${String(record.maDonHang).padStart(6, "0")}` }</TableCell>
                                                 <TableCell className="text-muted-foreground">
                                                   {new Date(record.ngayPhatSinh).toLocaleDateString("vi-VN")}
                                                 </TableCell>
