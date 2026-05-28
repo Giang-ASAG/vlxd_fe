@@ -348,7 +348,7 @@ export default function PurchaseOrdersPage() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 pb-8">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Quản lý nhập hàng</h1>
