@@ -15,7 +15,6 @@ export const ProductService = {
    * Tạo sản phẩm mới
    */
   create: (data) => api.post("/SanPhams", { ...data, maSanPham: 0, ngayTao: data.ngayTao ?? new Date().toISOString() }),
-
   /**
    * Cập nhật sản phẩm
    */
@@ -230,4 +229,12 @@ export const LichSuThanhToanService = {
 export const CongNoKhachHangService = {
   getByCustomer: (customerId) =>
     api.get(`/CongNoKhachHang/khach-hang/${customerId}?pageNumber=1&pageSize=20`),
+
+  // Lịch sử thanh toán theo mã đơn hàng
+  lichSuThanhToanHoaDon: (maDonHang) =>
+    api.get(`/CongNoKhachHang/lich-su-thanh-toan-hoa-don/${maDonHang}`),
+
+  // Thông tin công nợ theo đơn hàng
+  congNoTheoHoaDon: (maDonHang) =>
+    api.get(`/CongNoKhachHang/don-hang/${maDonHang}`),
 };

@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import {
   AlertCircle, ChevronDown, Copy, Download, Edit3, FileText,
   Filter, Loader2, MoreHorizontal, Plus, Printer, Search, Save, X,
-  Trash2,
+  Trash2, CreditCard,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,8 @@ import { normalizePrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
 import { usePagination } from "@/src/hooks/use-pagination";
-import { InvoiceService } from "@/src/services/api-services";
+import { InvoiceService, CongNoKhachHangService } from "@/src/services/api-services";
+import api from "@/src/lib/api-client";
 
 const statusConfig = {
   completed: { label: "Hoàn thành", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
@@ -53,6 +54,13 @@ function formatDateTime(value) {
   const pad = (n) => String(n).padStart(2, "0");
 
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatDate(value) {
+  if (!value) return "--";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleDateString('vi-VN');
 }
 
 function toDateTimeLocalValue(value) {
@@ -226,7 +234,397 @@ function createPrintDraftFromInvoice(invoice) {
   });
 }
 
-// ============= COMPONENT INLINE DATE EDITOR =============
+// Component thanh toán công nợ
+function PaymentModal({ isOpen, onClose, debtInfo, onSuccess, invoiceId }) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(false); // false: tiền mặt, true: chuyển khoản
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async () => {
+    // Validate
+    if (!amount || Number(amount) <= 0) {
+      setError("Vui lòng nhập số tiền hợp lệ");
+      return;
+    }
+
+    if (Number(amount) > debtInfo.soTienNo) {
+      setError(`Số tiền thanh toán không được vượt quá số tiền nợ (${formatCurrency(debtInfo.soTienNo)})`);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const payload = {
+        ma_cn: debtInfo.id,
+        sotien: Number(amount),
+        ghichu: note || "Thanh toán công nợ",
+        pttt: paymentMethod,
+        ngaythanhtoan: new Date().toISOString()
+      };
+
+      const response = await api.post("/CongNoKhachHang/thanh-toan-hoa-don", payload);
+      
+      if (response?.data?.success || response?.success) {
+        onSuccess();
+        onClose();
+        // Reset form
+        setAmount("");
+        setNote("");
+        setPaymentMethod(false);
+        setError("");
+      } else {
+        setError("Thanh toán thất bại, vui lòng thử lại");
+      }
+    } catch (err) {
+      console.error("Payment error:", err);
+      setError(err?.response?.data?.message || "Đã xảy ra lỗi khi thanh toán");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!debtInfo) return null;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Thanh toán công nợ</DialogTitle>
+          <DialogDescription>
+            Thanh toán cho đơn hàng {invoiceId}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-lg bg-muted/30 p-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Số tiền còn nợ:</span>
+              <span className="font-semibold text-red-600">{formatCurrency(debtInfo.soTienNo)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="amount">Số tiền thanh toán *</Label>
+            <Input
+              id="amount"
+              type="text"
+              inputMode="numeric"
+              value={amount}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^0-9]/g, '');
+                setAmount(value);
+                setError("");
+              }}
+              placeholder="Nhập số tiền cần thanh toán"
+              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="paymentMethod">Phương thức thanh toán</Label>
+            <Select
+              value={paymentMethod ? "chuyen_khoan" : "tien_mat"}
+              onValueChange={(v) => setPaymentMethod(v === "chuyen_khoan")}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tien_mat">Tiền mặt</SelectItem>
+                <SelectItem value="chuyen_khoan">Chuyển khoản</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="note">Ghi chú</Label>
+            <Textarea
+              id="note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Nhập ghi chú (nếu có)"
+              rows={3}
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              <AlertCircle className="mr-2 inline h-4 w-4" />
+              {error}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            <X className="mr-2 h-4 w-4" />
+            Hủy
+          </Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CreditCard className="mr-2 h-4 w-4" />}
+            Thanh toán
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Component hiển thị lịch sử thanh toán
+function PaymentHistory({ invoiceId }) {
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!invoiceId) return;
+
+    const fetchPaymentHistory = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await CongNoKhachHangService.lichSuThanhToanHoaDon(invoiceId);
+        
+        if (response?.success === true && Array.isArray(response.data)) {
+          setPaymentHistory(response.data);
+        } else if (response?.data && Array.isArray(response.data)) {
+          setPaymentHistory(response.data);
+        } else {
+          setPaymentHistory([]);
+        }
+      } catch (err) {
+        console.error("Error fetching payment history:", err);
+        setError("Đã xảy ra lỗi khi tải lịch sử thanh toán");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPaymentHistory();
+  }, [invoiceId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-8 text-destructive">
+        <AlertCircle className="mr-2 h-4 w-4" />
+        <span className="text-sm">{error}</span>
+      </div>
+    );
+  }
+
+  if (paymentHistory.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        Chưa có lịch sử thanh toán
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>Ngày thanh toán</TableHead>
+              <TableHead className="text-right">Số tiền</TableHead>
+              <TableHead>Phương thức</TableHead>
+              <TableHead>Ghi chú</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {paymentHistory.map((payment, index) => (
+              <TableRow key={payment.id || index}>
+                <TableCell className="text-muted-foreground">
+                  {formatDateTime(payment.ngayThanhToan)}
+                </TableCell>
+                <TableCell className="text-right font-semibold text-emerald-600">
+                  {formatCurrency(payment.soTien)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className={payment.phuongThucThanhToan ? "bg-blue-50 text-blue-700" : "bg-purple-50 text-purple-700"}>
+                    {payment.phuongThucThanhToan ? "Chuyển khoản" : "Tiền mặt"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {payment.ghiChu === "thanh_toan_mot_phan" ? "Thanh toán một phần" : payment.ghiChu || "--"}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+// Component hiển thị thông tin công nợ
+function DebtInfo({ invoiceId, onPaymentSuccess }) {
+  const [debts, setDebts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [selectedDebt, setSelectedDebt] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+  const fetchDebtInfo = async () => {
+    if (!invoiceId) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await CongNoKhachHangService.congNoTheoHoaDon(invoiceId);
+      
+      // Xử lý response có cấu trúc { success: true, data: [...] }
+      if (response?.success === true && Array.isArray(response.data)) {
+        setDebts(response.data);
+      } else if (response?.data && Array.isArray(response.data)) {
+        setDebts(response.data);
+      } else if (response?.data && !Array.isArray(response.data)) {
+        setDebts([response.data]);
+      } else {
+        setDebts([]);
+      }
+    } catch (err) {
+      console.error("Error fetching debt info:", err);
+      setError("Đã xảy ra lỗi khi tải thông tin công nợ");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDebtInfo();
+  }, [invoiceId]);
+
+  const handlePaymentClick = (debt) => {
+    setSelectedDebt(debt);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    fetchDebtInfo(); // Refresh danh sách công nợ
+    if (onPaymentSuccess) {
+      onPaymentSuccess(); // Gọi callback để refresh dữ liệu khác nếu cần
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch(status) {
+      case 'dang_no': return 'Đang nợ';
+      case 'da_thanh_toan': return 'Đã thanh toán';
+      case 'qua_han': return 'Quá hạn';
+      default: return status || '--';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'dang_no': return 'text-red-600';
+      case 'da_thanh_toan': return 'text-emerald-600';
+      case 'qua_han': return 'text-orange-600';
+      default: return 'text-muted-foreground';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center py-8 text-destructive">
+        <AlertCircle className="mr-2 h-4 w-4" />
+        <span className="text-sm">{error}</span>
+      </div>
+    );
+  }
+
+  if (debts.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        Không có thông tin công nợ
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>Mã công nợ</TableHead>
+              <TableHead className="text-right">Số tiền nợ</TableHead>
+              <TableHead>Ngày phát sinh</TableHead>
+              <TableHead>Trạng thái</TableHead>
+              <TableHead className="text-right">Thao tác</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {debts.map((debt) => (
+              <TableRow key={debt.id}>
+                <TableCell className="font-medium">{debt.id}</TableCell>
+                <TableCell className="text-right font-semibold text-red-600">
+                  {formatCurrency(debt.soTienNo)}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatDate(debt.ngayPhatSinh)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline" className={cn("font-medium", getStatusColor(debt.trangThai))}>
+                    {getStatusText(debt.trangThai)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handlePaymentClick(debt)}
+                    disabled={debt.soTienNo === 0}
+                    className="gap-2"
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Thanh toán
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Modal thanh toán */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => {
+          setShowPaymentModal(false);
+          setSelectedDebt(null);
+        }}
+        debtInfo={selectedDebt}
+        onSuccess={handlePaymentSuccess}
+        invoiceId={invoiceId}
+      />
+    </div>
+  );
+}
+
+// Component inline date editor
 function InlineDateEditor({ invoice, onUpdate }) {
   const [dateValue, setDateValue] = useState(toDateTimeLocalValue(invoice.createdAt));
   const [originalValue, setOriginalValue] = useState(toDateTimeLocalValue(invoice.createdAt));
@@ -263,18 +661,24 @@ function InlineDateEditor({ invoice, onUpdate }) {
         ngayTao: nextDate,
       };
 
-      if (InvoiceService.update) {
-        await InvoiceService.update(invoice.id, payload);
-      }
-
-      window.location.reload();
-
+      await InvoiceService.update(invoice.id, payload);
+      
+      const updatedInvoice = {
+        ...invoice,
+        createdAt: nextDate,
+        createdAtLabel: formatDateTime(nextDate),
+        raw: payload,
+      };
+      onUpdate(updatedInvoice);
+      
+      setOriginalValue(dateValue);
+      setIsDirty(false);
     } catch (err) {
       console.error("Update failed:", err);
       setDateValue(originalValue);
-      setSaving(false);
-      setIsDirty(false);
       alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -318,9 +722,8 @@ function InlineDateEditor({ invoice, onUpdate }) {
     </div>
   );
 }
-// ========================================================
 
-// ============= FORM CHỈNH SỬA HÓA ĐƠN =============
+// Form chỉnh sửa hóa đơn
 function EditInvoiceForm({ invoice, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     tenKhachHang: invoice.customer,
@@ -338,11 +741,9 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
 
   const handleSoTienTraChange = (e) => {
     let value = e.target.value;
-    // Xóa số 0 ở đầu nếu có
     if (value.startsWith('0') && value.length > 1) {
       value = value.replace(/^0+/, '');
     }
-    // Nếu là chuỗi rỗng thì set thành 0
     if (value === '') {
       value = '0';
     }
@@ -350,14 +751,12 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
   };
 
   const handleSoTienTraFocus = (e) => {
-    // Khi focus vào, nếu giá trị là 0 thì xóa đi
     if (e.target.value === '0' || e.target.value === 0) {
       handleChange("soTienTra", '');
     }
   };
 
   const handleSoTienTraBlur = (e) => {
-    // Khi blur ra, nếu trống thì set lại 0
     if (e.target.value === '' || e.target.value === undefined) {
       handleChange("soTienTra", 0);
     }
@@ -366,8 +765,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      // Tính toán lại trạng thái thanh toán dựa trên số tiền đã trả
-      const totalAfterDiscount = invoice.total; // Bỏ giảm giá
+      const totalAfterDiscount = invoice.total;
       let trangThaiThanhToan = "chua_thanh_toan";
 
       if (formData.soTienTra >= totalAfterDiscount) {
@@ -385,20 +783,14 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
         trangThaiThanhToan: trangThaiThanhToan,
         hinhThuc: formData.hinhThuc,
         soTienTra: formData.soTienTra,
-        // Thêm các trường mở rộng
         tenKhachHang: formData.tenKhachHang,
         soDienThoai: formData.soDienThoai,
         diaChi: formData.diaChi,
         ghiChu: formData.ghiChu,
       };
 
-      if (InvoiceService.update) {
-        await InvoiceService.update(invoice.id, payload);
-      }
-
+      await InvoiceService.update(invoice.id, payload);
       onSave();
-      window.location.reload();
-
     } catch (err) {
       console.error("Update failed:", err);
       alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
@@ -407,7 +799,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
     }
   };
 
-  const totalAfterDiscount = invoice.total; // Bỏ giảm giá
+  const totalAfterDiscount = invoice.total;
   const debt = Math.max(0, totalAfterDiscount - formData.soTienTra);
 
   return (
@@ -522,149 +914,203 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
     </div>
   );
 }
-// ========================================================
+
+// Component chi tiết hóa đơn
 function InvoiceDetail({ invoice, onCopy, onPrint, onUpdateInvoice, onEditInvoice }) {
+  const [activeTab, setActiveTab] = useState("info");
+
+  const handlePaymentSuccess = () => {
+    // Refresh lại thông tin hóa đơn sau khi thanh toán thành công
+    onUpdateInvoice(invoice);
+  };
+
   return (
     <TableRow className="bg-background hover:bg-background">
       <TableCell colSpan={9} className="border-x border-b border-primary/30 p-0">
         <div className="space-y-5 px-6 py-5">
           <div className="border-b">
             <div className="flex gap-8">
-              <button className="border-b-2 border-primary px-1 pb-3 text-sm font-semibold text-primary">Thông tin</button>
-              <button className="px-1 pb-3 text-sm font-semibold text-muted-foreground">Lịch sử thanh toán</button>
-            </div>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-[1fr_260px]">
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xl font-bold">{invoice.customer}</span>
-                <span className="font-mono text-sm text-primary">{invoice.code}</span>
-                <Badge variant="outline" className={cn("border", statusConfig[invoice.status].className)}>
-                  {statusConfig[invoice.status].label}
-                </Badge>
-              </div>
-
-              <div className="grid gap-3 text-sm md:grid-cols-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Người tạo</p>
-                  <p className="font-medium">{invoice.createdBy}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Người bán</p>
-                  <p className="font-medium">{invoice.seller}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Ngày bán</p>
-                  <InlineDateEditor
-                    invoice={invoice}
-                    onUpdate={onUpdateInvoice}
-                  />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Kênh bán</p>
-                  <p className="font-medium">{invoice.channel}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Bảng giá</p>
-                  <p className="font-medium">{invoice.priceBook}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Thanh toán</p>
-                  <p className="font-medium">{invoice.paymentMethod}</p>
-                </div>
-                {invoice.phone && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Số điện thoại</p>
-                    <p className="font-medium">{invoice.phone}</p>
-                  </div>
+              <button 
+                className={cn(
+                  "px-1 pb-3 text-sm font-semibold transition-colors",
+                  activeTab === "info" 
+                    ? "border-b-2 border-primary text-primary" 
+                    : "text-muted-foreground hover:text-foreground"
                 )}
-                {invoice.address && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Địa chỉ</p>
-                    <p className="font-medium">{invoice.address}</p>
-                  </div>
+                onClick={() => setActiveTab("info")}
+              >
+                Thông tin
+              </button>
+              <button 
+                className={cn(
+                  "px-1 pb-3 text-sm font-semibold transition-colors",
+                  activeTab === "payment" 
+                    ? "border-b-2 border-primary text-primary" 
+                    : "text-muted-foreground hover:text-foreground"
                 )}
-                {invoice.note && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Ghi chú</p>
-                    <p className="font-medium italic">{invoice.note}</p>
-                  </div>
+                onClick={() => setActiveTab("payment")}
+              >
+                Lịch sử thanh toán
+              </button>
+              <button 
+                className={cn(
+                  "px-1 pb-3 text-sm font-semibold transition-colors",
+                  activeTab === "debt" 
+                    ? "border-b-2 border-primary text-primary" 
+                    : "text-muted-foreground hover:text-foreground"
                 )}
-              </div>
-            </div>
-
-            <div className="text-right">
-              <p className="text-sm font-semibold">Chi nhánh trung tâm</p>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Mã hàng</TableHead>
-                  <TableHead>Tên hàng</TableHead>
-                  <TableHead className="text-right">Số lượng</TableHead>
-                  <TableHead className="text-right">Đơn giá</TableHead>
-                  <TableHead className="text-right">Thành tiền</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoice.details.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-20 text-center text-sm text-muted-foreground">Hóa đơn chưa có chi tiết sản phẩm</TableCell>
-                  </TableRow>
-                ) : invoice.details.map((item, index) => (
-                  <TableRow key={`${invoice.code}-${index}`}>
-                    <TableCell className="font-mono text-xs text-primary">{itemCode(item)}</TableCell>
-                    <TableCell className="max-w-[420px] font-medium">{itemName(item)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{itemQty(item)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(itemUnitPrice(item))}</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(itemTotal(item))}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="flex justify-end border-t pt-6">
-            <div className="w-full max-w-[420px] space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">
-                  Tổng tiền hàng (
-                  {invoice.details.reduce((s, item) => s + itemQty(item), 0)})
-                </span>
-                <span className="font-semibold tabular-nums">
-                  {formatCurrency(invoice.total)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Giảm giá</span>
-                <span className="font-semibold text-red-600 tabular-nums">
-                  -{formatCurrency(invoice.discount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-semibold">Khách cần trả</span>
-                <span className="font-semibold tabular-nums">
-                  {formatCurrency(invoice.total - invoice.discount)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Khách đã trả</span>
-                <span className="font-semibold text-emerald-600 tabular-nums">
-                  {formatCurrency(invoice.paid)}
-                </span>
-              </div>
-              <div className="flex justify-between border-t pt-2">
-                <span className="font-semibold">Công nợ</span>
-                <span className={cn("font-semibold tabular-nums", invoice.debt > 0 ? "text-red-600" : "text-emerald-600")}>
-                  {formatCurrency(invoice.debt)}
-                </span>
-              </div>
+                onClick={() => setActiveTab("debt")}
+              >
+                Đang nợ
+              </button>
             </div>
           </div>
+
+          {/* Tab Thông tin */}
+          {activeTab === "info" && (
+            <>
+              <div className="grid gap-5 xl:grid-cols-[1fr_260px]">
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-xl font-bold">{invoice.customer}</span>
+                    <span className="font-mono text-sm text-primary">{invoice.code}</span>
+                    <Badge variant="outline" className={cn("border", statusConfig[invoice.status].className)}>
+                      {statusConfig[invoice.status].label}
+                    </Badge>
+                  </div>
+
+                  <div className="grid gap-3 text-sm md:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Người tạo</p>
+                      <p className="font-medium">{invoice.createdBy}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Người bán</p>
+                      <p className="font-medium">{invoice.seller}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Ngày bán</p>
+                      <InlineDateEditor
+                        invoice={invoice}
+                        onUpdate={onUpdateInvoice}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Kênh bán</p>
+                      <p className="font-medium">{invoice.channel}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Bảng giá</p>
+                      <p className="font-medium">{invoice.priceBook}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Thanh toán</p>
+                      <p className="font-medium">{invoice.paymentMethod}</p>
+                    </div>
+                    {invoice.phone && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Số điện thoại</p>
+                        <p className="font-medium">{invoice.phone}</p>
+                      </div>
+                    )}
+                    {invoice.address && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Địa chỉ</p>
+                        <p className="font-medium">{invoice.address}</p>
+                      </div>
+                    )}
+                    {invoice.note && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Ghi chú</p>
+                        <p className="font-medium italic">{invoice.note}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-sm font-semibold">Chi nhánh trung tâm</p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead>Mã hàng</TableHead>
+                      <TableHead>Tên hàng</TableHead>
+                      <TableHead className="text-right">Số lượng</TableHead>
+                      <TableHead className="text-right">Đơn giá</TableHead>
+                      <TableHead className="text-right">Thành tiền</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoice.details.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-20 text-center text-sm text-muted-foreground">Hóa đơn chưa có chi tiết sản phẩm</TableCell>
+                      </TableRow>
+                    ) : invoice.details.map((item, index) => (
+                      <TableRow key={`${invoice.code}-${index}`}>
+                        <TableCell className="font-mono text-xs text-primary">{itemCode(item)}</TableCell>
+                        <TableCell className="max-w-[420px] font-medium">{itemName(item)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{itemQty(item)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCurrency(itemUnitPrice(item))}</TableCell>
+                        <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(itemTotal(item))}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex justify-end border-t pt-6">
+                <div className="w-full max-w-[420px] space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Tổng tiền hàng (
+                      {invoice.details.reduce((s, item) => s + itemQty(item), 0)})
+                    </span>
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(invoice.total)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Giảm giá</span>
+                    <span className="font-semibold text-red-600 tabular-nums">
+                      -{formatCurrency(invoice.discount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Khách cần trả</span>
+                    <span className="font-semibold tabular-nums">
+                      {formatCurrency(invoice.total - invoice.discount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Khách đã trả</span>
+                    <span className="font-semibold text-emerald-600 tabular-nums">
+                      {formatCurrency(invoice.paid)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2">
+                    <span className="font-semibold">Công nợ</span>
+                    <span className={cn("font-semibold tabular-nums", invoice.debt > 0 ? "text-red-600" : "text-emerald-600")}>
+                      {formatCurrency(invoice.debt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Tab Lịch sử thanh toán */}
+          {activeTab === "payment" && (
+            <PaymentHistory invoiceId={invoice.id} />
+          )}
+
+          {/* Tab Đang nợ */}
+          {activeTab === "debt" && (
+            <DebtInfo invoiceId={invoice.id} onPaymentSuccess={handlePaymentSuccess} />
+          )}
 
           <div className="flex justify-between gap-2 border-t pt-4">
             <div className="flex flex-wrap items-center gap-2 self-end">
@@ -685,6 +1131,7 @@ function InvoiceDetail({ invoice, onCopy, onPrint, onUpdateInvoice, onEditInvoic
   );
 }
 
+// Component chính
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -700,11 +1147,13 @@ export default function InvoicesPage() {
       try {
         setLoading(true);
         setError(null);
-        const data = await InvoiceService.getAll();
-        const mapped = (data?.data ?? []).map(mapDonHang);
+        const response = await InvoiceService.getAll();
+        const data = response?.data ?? [];
+        const mapped = Array.isArray(data) ? data.map(mapDonHang) : [];
         setInvoices(mapped);
         if (mapped.length > 0) setExpandedId(mapped[0].id);
       } catch (err) {
+        console.error("Error fetching invoices:", err);
         setError(err?.message ?? "Không thể tải dữ liệu hóa đơn");
       } finally {
         setLoading(false);
@@ -775,6 +1224,18 @@ export default function InvoicesPage() {
   const handleSaveEdit = () => {
     closeEditDialog();
     showActionMessage("success", `Đã cập nhật thông tin hóa đơn ${editDialog.invoice?.code}`);
+    // Refresh lại danh sách
+    const fetchInvoices = async () => {
+      try {
+        const response = await InvoiceService.getAll();
+        const data = response?.data ?? [];
+        const mapped = Array.isArray(data) ? data.map(mapDonHang) : [];
+        setInvoices(mapped);
+      } catch (err) {
+        console.error("Error refreshing invoices:", err);
+      }
+    };
+    fetchInvoices();
   };
 
   if (loading) return (
