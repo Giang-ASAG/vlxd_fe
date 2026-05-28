@@ -2,10 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, CalendarDays, ChevronDown, Download, Eye, FilePlus2,
-  Loader2, PackagePlus, Plus, Save, Search, Trash2, Truck,
+  AlertCircle, CalendarDays, ChevronDown, Copy, Download, Edit3, Eye, FilePlus2,
+  Loader2, PackagePlus, Plus, Printer, Save, Search, Trash2, Truck, X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { PurchasePOS } from "./purchase-pos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +27,9 @@ import { usePagination } from "@/src/hooks/use-pagination";
 import {
   ProductService, PurchaseOrderService, SupplierService,
 } from "@/src/services/api-services";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 const EMPTY_LINE = { productId: "", productName: "", quantity: 1, unitPrice: 0, discount: 0, unit: "" };
 
@@ -45,6 +49,18 @@ function formatDateTime(value) {
   return date.toLocaleString("vi-VN", {
     day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
   });
+}
+
+function toDateTimeLocalValue(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function fromDateTimeLocalValue(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function getLines(order) {
@@ -108,34 +124,273 @@ function getUserId() {
   return Number.isFinite(id) && id > 0 ? id : 1;
 }
 
-function PurchaseOrderDetail({ order }) {
+// ============= INLINE DATE EDITOR =============
+function InlineDateEditor({ order, onUpdate }) {
+  const [dateValue, setDateValue] = useState(toDateTimeLocalValue(order.createdAt));
+  const [originalValue, setOriginalValue] = useState(toDateTimeLocalValue(order.createdAt));
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const handleDateChange = (e) => {
+    let newDateValue = e.target.value;
+    const selectedDateStr = newDateValue.split('T')[0];
+    const selectedDate = new Date(selectedDateStr);
+    const today = new Date();
+    
+    if (selectedDate.toDateString() === today.toDateString()) {
+      const hours = String(today.getHours()).padStart(2, '0');
+      const minutes = String(today.getMinutes()).padStart(2, '0');
+      newDateValue = `${selectedDateStr}T${hours}:${minutes}`;
+      setDateValue(newDateValue);
+    } else {
+      setDateValue(newDateValue);
+    }
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    const nextDate = fromDateTimeLocalValue(dateValue);
+    if (!nextDate) return;
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...order.raw,
+        ngayNhap: nextDate,
+        ngayTao: nextDate,
+      };
+
+      if (PurchaseOrderService.update) {
+        await PurchaseOrderService.update(order.id, payload);
+      }
+      window.location.reload();
+    } catch (err) {
+      console.error("Update failed:", err);
+      setDateValue(originalValue);
+      setSaving(false);
+      setIsDirty(false);
+      alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
+    }
+  };
+
+  const handleCancel = () => {
+    setDateValue(originalValue);
+    setIsDirty(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="datetime-local"
+        value={dateValue}
+        onChange={handleDateChange}
+        onClick={(e) => e.stopPropagation()}
+        className="rounded-md border border-input bg-background px-2 py-1 text-sm font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        disabled={saving}
+      />
+      {isDirty && (
+        <>
+          <Button size="sm" variant="ghost" onClick={handleSave} disabled={saving} className="h-7 px-2 text-xs">
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Lưu"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={handleCancel} disabled={saving} className="h-7 px-2 text-xs">
+            Hủy
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============= FORM CHỈNH SỬA PHIẾU NHẬP =============
+function EditPurchaseOrderForm({ order, onSave, onCancel }) {
+  const [formData, setFormData] = useState({
+    supplierName: order.supplierName,
+    note: order.raw?.ghiChu || "",
+    paidNow: order.paid,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handlePaidNowChange = (e) => {
+    let value = e.target.value;
+    if (value.startsWith('0') && value.length > 1) {
+      value = value.replace(/^0+/, '');
+    }
+    if (value === '') {
+      value = '0';
+    }
+    setFormData(prev => ({ ...prev, paidNow: toNumber(value) }));
+  };
+
+  const handlePaidNowFocus = (e) => {
+    if (e.target.value === '0' || e.target.value === 0) {
+      setFormData(prev => ({ ...prev, paidNow: '' }));
+    }
+  };
+
+  const handlePaidNowBlur = (e) => {
+    if (e.target.value === '' || e.target.value === undefined) {
+      setFormData(prev => ({ ...prev, paidNow: 0 }));
+    }
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        ...order.raw,
+        ghiChu: formData.note,
+        soTienThanhToanNgay: formData.paidNow,
+        daTraNcc: formData.paidNow,
+      };
+
+      if (PurchaseOrderService.update) {
+        await PurchaseOrderService.update(order.id, payload);
+      }
+      
+      onSave();
+      window.location.reload();
+    } catch (err) {
+      console.error("Update failed:", err);
+      alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const newDebt = order.total - formData.paidNow;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="supplierName">Nhà cung cấp</Label>
+          <Input
+            id="supplierName"
+            value={formData.supplierName}
+            onChange={(e) => setFormData(prev => ({ ...prev, supplierName: e.target.value }))}
+            placeholder="Tên nhà cung cấp"
+          />
+        </div>
+        
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="note">Ghi chú</Label>
+          <Textarea
+            id="note"
+            value={formData.note}
+            onChange={(e) => setFormData(prev => ({ ...prev, note: e.target.value }))}
+            placeholder="Ghi chú (nếu có)"
+            rows={3}
+          />
+        </div>
+        
+        <div className="space-y-2">
+          <Label htmlFor="paidNow">Đã thanh toán cho NCC</Label>
+          <Input
+            id="paidNow"
+            type="number"
+            value={formData.paidNow}
+            onChange={handlePaidNowChange}
+            onFocus={handlePaidNowFocus}
+            onBlur={handlePaidNowBlur}
+            placeholder="0"
+            className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <p className="text-xs text-muted-foreground">* Click vào ô để xóa số 0, nhập số tiền trực tiếp</p>
+        </div>
+      </div>
+      
+      <div className="rounded-lg bg-muted/30 p-4">
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="font-medium">Tổng tiền hàng:</span>
+            <span className="font-semibold">{formatCurrency(order.total)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="font-medium">Đã thanh toán:</span>
+            <span className="font-semibold text-emerald-600">{formatCurrency(formData.paidNow)}</span>
+          </div>
+          <div className="flex justify-between border-t pt-2">
+            <span className="font-medium">Còn nợ NCC:</span>
+            <span className={cn("font-bold", newDebt > 0 ? "text-red-600" : "text-emerald-600")}>
+              {formatCurrency(Math.max(0, newDebt))}
+            </span>
+          </div>
+        </div>
+      </div>
+      
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel} disabled={saving}>
+          <X className="mr-2 h-4 w-4" />
+          Hủy
+        </Button>
+        <Button onClick={handleSubmit} disabled={saving}>
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Lưu thay đổi
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+}
+
+function PurchaseOrderDetail({ order, onCopy, onPrint, onUpdateOrder, onEditOrder }) {
   const lines = order.lines;
+
+  const handleCopy = () => {
+    const text = `Phiếu nhập: ${order.code}
+Ngày nhập: ${formatDateTime(order.createdAt)}
+Nhà cung cấp: ${order.supplierName}
+Tổng tiền: ${formatCurrency(order.total)}
+Đã trả: ${formatCurrency(order.paid)}
+Còn nợ: ${formatCurrency(order.debt)}`;
+    navigator.clipboard.writeText(text);
+    alert("Đã sao chép thông tin");
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
 
   return (
     <TableRow className="bg-background hover:bg-background">
       <TableCell colSpan={8} className="border-x border-b border-primary/30 p-0">
         <div className="space-y-5 px-6 py-5">
-          <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-            <div>
-              <div className="mb-4 flex flex-wrap items-center gap-3">
-                <span className="text-lg font-bold">{order.code}</span>
-                <Badge variant="outline" className={cn("border", statusClass(order.status))}>{order.status}</Badge>
+          <div className="border-b">
+            <div className="flex gap-8">
+              <button className="border-b-2 border-primary px-1 pb-3 text-sm font-semibold text-primary">Thông tin</button>
+              <button className="px-1 pb-3 text-sm font-semibold text-muted-foreground">Lịch sử thanh toán</button>
+            </div>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[1fr_260px]">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xl font-bold">{order.supplierName}</span>
+                <span className="font-mono text-sm text-primary">{order.code}</span>
+                <Badge variant="outline" className={cn("border", statusClass(order.status))}>
+                  {order.status}
+                </Badge>
               </div>
-              <div className="grid gap-3 text-sm sm:grid-cols-3">
+
+              <div className="grid gap-3 text-sm md:grid-cols-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Người nhập</p>
                   <p className="font-medium">{order.createdBy}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Ngày nhập</p>
-                  <p className="font-medium">{formatDateTime(order.createdAt)}</p>
+                  <InlineDateEditor 
+                    order={order} 
+                    onUpdate={onUpdateOrder}
+                  />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Nhà cung cấp</p>
-                  <p className="font-medium text-primary">{order.supplierName}</p>
+                  <p className="text-xs text-muted-foreground">Mã NCC</p>
+                  <p className="font-mono text-xs">{order.supplierId ? `NCC${String(order.supplierId).padStart(5, "0")}` : "--"}</p>
                 </div>
               </div>
             </div>
+
             <div className="text-right">
               <p className="text-sm font-semibold">{order.branch}</p>
               <p className="mt-1 text-xs text-muted-foreground">Số lượng mặt hàng: {lines.length}</p>
@@ -173,18 +428,33 @@ function PurchaseOrderDetail({ order }) {
             </Table>
           </div>
 
-          <div className="ml-auto grid max-w-sm gap-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tổng tiền hàng</span>
-              <span className="font-semibold tabular-nums">{formatCurrency(order.total)}</span>
+          <div className="flex justify-end border-t pt-6">
+            <div className="w-full max-w-[420px] space-y-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tổng tiền hàng</span>
+                <span className="font-semibold tabular-nums">{formatCurrency(order.total)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Đã trả NCC</span>
+                <span className="font-semibold text-emerald-600 tabular-nums">{formatCurrency(order.paid)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2">
+                <span className="font-semibold">Cần trả NCC</span>
+                <span className="font-bold text-primary tabular-nums">{formatCurrency(order.debt)}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Đã trả NCC</span>
-              <span className="tabular-nums">{formatCurrency(order.paid)}</span>
+          </div>
+
+          <div className="flex justify-between gap-2 border-t pt-4">
+            <div className="flex flex-wrap items-center gap-2 self-end">
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground"><Trash2 className="h-4 w-4" /> Hủy</Button>
+              <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={handleCopy}><Copy className="h-4 w-4" /> Sao chép</Button>
             </div>
-            <div className="flex justify-between border-t pt-2 text-base">
-              <span className="font-semibold">Cần trả NCC</span>
-              <span className="font-bold text-primary tabular-nums">{formatCurrency(order.debt || order.total - order.paid)}</span>
+            <div className="flex flex-wrap items-center gap-2 self-end">
+              <Button variant="outline" className="gap-2" onClick={handlePrint}><Printer className="h-4 w-4" /> In</Button>
+              <Button className="gap-2" onClick={() => onEditOrder(order)}>
+                <Edit3 className="h-4 w-4" /> Chỉnh sửa
+              </Button>
             </div>
           </div>
         </div>
@@ -195,6 +465,7 @@ function PurchaseOrderDetail({ order }) {
 
 export default function PurchaseOrdersPage() {
   const [orders, setOrders] = useState([]);
+  const [posOpen, setPosOpen] = useState(false);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +474,7 @@ export default function PurchaseOrdersPage() {
   const [search, setSearch] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
+  const [editDialog, setEditDialog] = useState({ open: false, order: null });
   const [draftOpen, setDraftOpen] = useState(false);
   const [draft, setDraft] = useState({
     supplierId: "", receiptCode: "", paidNow: 0, note: "", lines: [{ ...EMPTY_LINE }],
@@ -340,6 +612,24 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  const handleUpdateOrder = (updatedOrder) => {
+    setOrders((items) => 
+      items.map((item) => item.id === updatedOrder.id ? updatedOrder : item)
+    );
+  };
+
+  const openEditDialog = (order) => {
+    setEditDialog({ open: true, order });
+  };
+
+  const closeEditDialog = () => {
+    setEditDialog({ open: false, order: null });
+  };
+
+  const handleSaveEdit = () => {
+    closeEditDialog();
+  };
+
   if (loading) return (
     <div className="flex h-96 items-center justify-center gap-3 text-muted-foreground">
       <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -358,7 +648,7 @@ export default function PurchaseOrdersPage() {
           <Button variant="outline" className="gap-2" onClick={handleExport} disabled={!filteredOrders.length}>
             <Download className="h-4 w-4" /> Xuất file
           </Button>
-          <Button className="gap-2" onClick={() => setDraftOpen((v) => !v)}>
+          <Button className="gap-2" onClick={() => setPosOpen(true)}>
             <Plus className="h-4 w-4" /> Nhập hàng
           </Button>
         </div>
@@ -520,13 +810,21 @@ export default function PurchaseOrdersPage() {
               <TableHead>Nhà cung cấp</TableHead>
               <TableHead className="text-right">Cần trả NCC</TableHead>
               <TableHead>Trạng thái</TableHead>
-              <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
+            <TableRow className="bg-muted/20 font-semibold">
+              <TableCell></TableCell>
+              <TableCell></TableCell>
+              <TableCell></TableCell>
+              <TableCell></TableCell>
+              <TableCell></TableCell>
+              <TableCell className="text-right tabular-nums">{formatCurrency(stats.debt)}</TableCell>
+              <TableCell></TableCell>
+            </TableRow>
             {paginatedItems.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-36 text-center text-sm text-muted-foreground">Không tìm thấy phiếu nhập</TableCell>
+                <TableCell colSpan={7} className="h-36 text-center text-sm text-muted-foreground">Không tìm thấy phiếu nhập</TableCell>
               </TableRow>
             ) : paginatedItems.map((order) => (
               <Fragment key={order.code}>
@@ -535,19 +833,31 @@ export default function PurchaseOrdersPage() {
                   onClick={() => setExpandedId((id) => id === order.id ? null : order.id)}
                 >
                   <TableCell><ChevronDown className={cn("h-4 w-4 transition-transform", expandedId === order.id && "rotate-180")} /></TableCell>
-                  <TableCell className="font-semibold">{order.code}</TableCell>
+                  <TableCell className="font-semibold text-primary">{order.code}</TableCell>
                   <TableCell className="text-muted-foreground">{formatDateTime(order.createdAt)}</TableCell>
-                  <TableCell className="font-mono text-xs">{order.supplierId ? `NCC${order.supplierId.padStart(5, "0")}` : "--"}</TableCell>
+                  <TableCell className="font-mono text-xs">{order.supplierId ? `NCC${String(order.supplierId).padStart(5, "0")}` : "--"}</TableCell>
                   <TableCell className="font-medium">{order.supplierName}</TableCell>
-                  <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(order.debt || order.total - order.paid)}</TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(order.debt)}</TableCell>
                   <TableCell><Badge variant="outline" className={cn("border", statusClass(order.status))}>{order.status}</Badge></TableCell>
-                  <TableCell><Eye className="h-4 w-4 text-muted-foreground" /></TableCell>
                 </TableRow>
-                {expandedId === order.id && <PurchaseOrderDetail order={order} />}
+                {expandedId === order.id && (
+                  <PurchaseOrderDetail 
+                    order={order}
+                    onCopy={() => {}}
+                    onPrint={() => {}}
+                    onUpdateOrder={handleUpdateOrder}
+                    onEditOrder={openEditDialog}
+                  />
+                )}
               </Fragment>
             ))}
           </TableBody>
         </Table>
+        <PurchasePOS
+          open={posOpen}
+          onClose={() => setPosOpen(false)}
+          onSuccess={loadData}
+        />
       </div>
 
       <div className="flex flex-col gap-4 px-1 sm:flex-row sm:items-center sm:justify-between">
@@ -556,6 +866,26 @@ export default function PurchaseOrdersPage() {
         </p>
         <PaginationWrapper currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
       </div>
+
+      {/* Dialog chỉnh sửa phiếu nhập */}
+      <Dialog open={editDialog.open} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Chỉnh sửa phiếu nhập</DialogTitle>
+            <DialogDescription>
+              Cập nhật thông tin phiếu nhập {editDialog.order?.code ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {editDialog.order && (
+            <EditPurchaseOrderForm
+              order={editDialog.order}
+              onSave={handleSaveEdit}
+              onCancel={closeEditDialog}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
