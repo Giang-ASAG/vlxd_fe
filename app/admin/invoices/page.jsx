@@ -75,7 +75,7 @@ function mapDonHang(order) {
     thanh_toan_mot_phan: "partial",
     tra_mot_phan: "partial",
   };
-  
+
   const details = order?.chiTietHoaDonDtos ?? order?.chiTiet ?? [];
   const total = toNumber(order?.tongTien);
   const paid = toNumber(order?.soTienTra ?? order?.khachDaTra);
@@ -235,11 +235,11 @@ function InlineDateEditor({ invoice, onUpdate }) {
 
   const handleDateChange = (e) => {
     let newDateValue = e.target.value;
-    
+
     const selectedDateStr = newDateValue.split('T')[0];
     const selectedDate = new Date(selectedDateStr);
     const today = new Date();
-    
+
     if (selectedDate.toDateString() === today.toDateString()) {
       const hours = String(today.getHours()).padStart(2, '0');
       const minutes = String(today.getMinutes()).padStart(2, '0');
@@ -248,7 +248,7 @@ function InlineDateEditor({ invoice, onUpdate }) {
     } else {
       setDateValue(newDateValue);
     }
-    
+
     setIsDirty(true);
   };
 
@@ -266,9 +266,9 @@ function InlineDateEditor({ invoice, onUpdate }) {
       if (InvoiceService.update) {
         await InvoiceService.update(invoice.id, payload);
       }
-      
+
       window.location.reload();
-      
+
     } catch (err) {
       console.error("Update failed:", err);
       setDateValue(originalValue);
@@ -369,7 +369,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
       // Tính toán lại trạng thái thanh toán dựa trên số tiền đã trả
       const totalAfterDiscount = invoice.total; // Bỏ giảm giá
       let trangThaiThanhToan = "chua_thanh_toan";
-      
+
       if (formData.soTienTra >= totalAfterDiscount) {
         trangThaiThanhToan = "da_thanh_toan";
       } else if (formData.soTienTra > 0) {
@@ -395,10 +395,10 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
       if (InvoiceService.update) {
         await InvoiceService.update(invoice.id, payload);
       }
-      
+
       onSave();
       window.location.reload();
-      
+
     } catch (err) {
       console.error("Update failed:", err);
       alert("Cập nhật thất bại: " + (err?.message || "Vui lòng thử lại"));
@@ -422,7 +422,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             placeholder="Nhập tên khách hàng"
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="soDienThoai">Số điện thoại</Label>
           <Input
@@ -432,7 +432,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             placeholder="Nhập số điện thoại"
           />
         </div>
-        
+
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="diaChi">Địa chỉ</Label>
           <Input
@@ -442,7 +442,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             placeholder="Nhập địa chỉ"
           />
         </div>
-        
+
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="ghiChu">Ghi chú</Label>
           <Textarea
@@ -453,12 +453,13 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             rows={3}
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="soTienTra">Khách đã trả</Label>
           <Input
             id="soTienTra"
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={formData.soTienTra}
             onChange={handleSoTienTraChange}
             onFocus={handleSoTienTraFocus}
@@ -467,11 +468,11 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="hinhThuc">Phương thức thanh toán</Label>
-          <Select 
-            value={formData.hinhThuc ? "chuyen_khoan" : "tien_mat"} 
+          <Select
+            value={formData.hinhThuc ? "chuyen_khoan" : "tien_mat"}
             onValueChange={(v) => handleChange("hinhThuc", v === "chuyen_khoan")}
           >
             <SelectTrigger>
@@ -484,7 +485,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
           </Select>
         </div>
       </div>
-      
+
       <div className="rounded-lg bg-muted/30 p-4">
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
@@ -507,7 +508,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
           </div>
         </div>
       </div>
-      
+
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={saving}>
           <X className="mr-2 h-4 w-4" />
@@ -555,8 +556,8 @@ function InvoiceDetail({ invoice, onCopy, onPrint, onUpdateInvoice, onEditInvoic
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Ngày bán</p>
-                  <InlineDateEditor 
-                    invoice={invoice} 
+                  <InlineDateEditor
+                    invoice={invoice}
                     onUpdate={onUpdateInvoice}
                   />
                 </div>
@@ -757,7 +758,7 @@ export default function InvoicesPage() {
   };
 
   const handleUpdateInvoice = (updatedInvoice) => {
-    setInvoices((items) => 
+    setInvoices((items) =>
       items.map((item) => item.id === updatedInvoice.id ? updatedInvoice : item)
     );
     showActionMessage("success", `Đã cập nhật ngày bán ${updatedInvoice.code}`);
@@ -931,7 +932,7 @@ export default function InvoicesPage() {
               Cập nhật thông tin hóa đơn {editDialog.invoice?.code ?? ""}
             </DialogDescription>
           </DialogHeader>
-          
+
           {editDialog.invoice && (
             <EditInvoiceForm
               invoice={editDialog.invoice}
