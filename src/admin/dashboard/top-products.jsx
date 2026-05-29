@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { ThongKeService } from "@/src/services/api-services";
 import { Package, Loader2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/money";
 
 export function TopProducts() {
   const [products, setProducts] = useState([]);
@@ -45,7 +46,7 @@ export function TopProducts() {
             <div className="text-right">
               <p className="text-xs text-muted-foreground">Tổng doanh thu</p>
               <p className="text-base font-bold text-primary">
-                {new Intl.NumberFormat("vi-VN").format(totalRevenue)}đ
+                {formatCurrency(totalRevenue)}
               </p>
             </div>
           )}
@@ -67,7 +68,7 @@ export function TopProducts() {
             <div className="space-y-5">
               {products.map((product, index) => {
                 const percentage = Math.min((product.soLuongDaBan / product.tongTonKho) * 100, 100);
-                const revenue = product.tongDoanhThu.toLocaleString("vi-VN");
+                const revenue = formatCurrency(product.tongDoanhThu);
                 const isTop1 = index === 0;
                 const isTop2 = index === 1;
                 const isTop3 = index === 2;
@@ -97,7 +98,7 @@ export function TopProducts() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-primary">{revenue}đ</p>
+                        <p className="text-sm font-bold text-primary">{revenue}</p>
                         <p className="text-xs text-muted-foreground">
                           {((product.tongDoanhThu / totalRevenue) * 100).toFixed(1)}% tổng
                         </p>

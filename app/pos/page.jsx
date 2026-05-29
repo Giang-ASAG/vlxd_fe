@@ -16,16 +16,13 @@ import {
   AlertCircle, Loader2, RefreshCw, CheckCircle2, Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatMoneyInput, parseMoneyInput } from "@/lib/money";
 import { Link } from "react-router-dom";
 import { createPrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { getSession } from "@/src/auth/session";
 import api from "@/src/lib/api-client";
 
 // ── Tiện ích ──────────────────────────────────────────────────────────────────
-
-function parseAmountDisplay(value) {
-  return Number(String(value).replace(/\D/g, "")) || 0;
-}
 
 function toText(value) {
   return value == null ? "" : String(value);
@@ -171,7 +168,7 @@ export default function POSPage() {
 
   const subtotal = cart.reduce((s, i) => s + toNumber(i.price) * toNumber(i.quantity), 0);
   const total = subtotal - discount;
-  const paidAmount = parseAmountDisplay(amountPaid);
+  const paidAmount = parseMoneyInput(amountPaid) || 0;
   const shortfall = Math.max(0, total - paidAmount);
   const change = paidAmount > total ? paidAmount - total : 0;
 
@@ -179,7 +176,7 @@ export default function POSPage() {
   useEffect(() => { searchRef.current?.focus(); }, []);
 
   useEffect(() => {
-    setAmountPaid(total > 0 ? new Intl.NumberFormat("vi-VN").format(total) : "");
+    setAmountPaid(total > 0 ? formatMoneyInput(total) : "");
   }, [total]);
 
   useEffect(() => {
@@ -192,9 +189,6 @@ export default function POSPage() {
     return () => window.removeEventListener("keydown", onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart]);
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const fmt = (n) => new Intl.NumberFormat("vi-VN").format(toNumber(n));
 
   const handleOpenPrintPage = useCallback(() => {
     if (cart.length === 0) return;
@@ -466,7 +460,7 @@ export default function POSPage() {
                               </div>
                               <div className="text-right shrink-0">
                                 <p className="font-bold text-sm text-primary">
-                                  {fmt(product.price)}đ
+                                  {formatCurrency(product.price)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">/{product.unit}</p>
                                 <p className="text-[10px] text-muted-foreground mt-1">
@@ -594,14 +588,14 @@ export default function POSPage() {
                         </div>
 
                         {/* Giá vốn */}
-                        <div className="text-sm text-muted-foreground font-mono">{fmt(item.cost ?? 0)}đ</div>
+                        <div className="text-sm text-muted-foreground font-mono">{formatCurrency(item.cost ?? 0)}</div>
 
                         {/* Giá bán editable */}
                         <div className="text-right">
                           <Input
                             className="h-9 text-right font-medium text-sm px-2 rounded-lg"
                             inputMode="numeric"
-                            value={linePriceEdit?.id === item.id ? linePriceEdit.raw : fmt(item.price)}
+                            value={linePriceEdit?.id === item.id ? linePriceEdit.raw : formatMoneyInput(item.price)}
                             onFocus={() => setLinePriceEdit({ id: item.id, raw: String(item.price) })}
                             onChange={(e) => {
                               const raw = e.target.value.replace(/\D/g, "");
@@ -657,7 +651,7 @@ export default function POSPage() {
 
                         {/* Thành tiền */}
                         <div className="text-right font-bold text-sm text-primary font-mono">
-                          {fmt(item.price * item.quantity)}đ
+                          {formatCurrency(item.price * item.quantity)}
                         </div>
 
                         {/* Xóa */}
@@ -739,7 +733,7 @@ export default function POSPage() {
               <p className="text-muted-foreground">📍 {selectedCustomer.address}</p>
               {selectedCustomer.hanMucNo > 0 && (
                 <p className="text-muted-foreground">
-                  💰 Hạn mức nợ: {fmt(selectedCustomer.hanMucNo)}đ
+                  💰 Hạn mức nợ: {formatCurrency(selectedCustomer.hanMucNo)}
                 </p>
               )}
             </div>
@@ -753,11 +747,11 @@ export default function POSPage() {
               <span className="text-muted-foreground">
                 Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
               </span>
-              <span className="font-mono">{fmt(subtotal)}đ</span>
+              <span className="font-mono">{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between text-xl font-bold border-t pt-3">
               <span>Tổng cộng</span>
-              <span className="text-primary font-mono">{fmt(total)}đ</span>
+              <span className="text-primary font-mono">{formatCurrency(total)}</span>
             </div>
           </div>
         </div>
@@ -770,12 +764,9 @@ export default function POSPage() {
               <Input
                 type="text"
                 inputMode="numeric"
-                value={amountPaid}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "");
-                  setAmountPaid(v ? fmt(Number(v)) : "");
-                }}
-                className="flex-1 text-right font-bold h-10 rounded-lg"
+                value={formatMoneyInput(amountPaid)}
+                onChange={(e) => setAmountPaid(parseMoneyInput(e.target.value))}
+                className="flex-1 text-right font-bold h-10 rounded-lg tabular-nums"
                 placeholder="0"
               />
             </div>
@@ -785,13 +776,13 @@ export default function POSPage() {
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   Còn thiếu:
                 </span>
-                <span className="font-mono font-bold">{fmt(shortfall)}đ</span>
+                <span className="font-mono font-bold">{formatCurrency(shortfall)}</span>
               </div>
             )}
             {paidAmount >= total && paidAmount > 0 && (
               <div className="flex justify-between text-sm font-medium bg-emerald-500/10 p-3 rounded-xl border border-emerald-200">
                 <span>Tiền thừa:</span>
-                <span className="font-mono font-bold">{fmt(change)}đ</span>
+                <span className="font-mono font-bold">{formatCurrency(change)}</span>
               </div>
             )}
           </div>
@@ -836,8 +827,8 @@ export default function POSPage() {
               <div className="text-center space-y-2">
                 <p className="font-bold text-xl">Đơn hàng đã ghi nhận!</p>
                 <p className="text-sm text-muted-foreground">
-                  Tổng: {fmt(total)}đ · Khách trả: {fmt(paidAmount)}đ
-                  {change > 0 && ` · Trả lại: ${fmt(change)}đ`}
+                  Tổng: {formatCurrency(total)} · Khách trả: {formatCurrency(paidAmount)}
+                  {change > 0 && ` · Trả lại: ${formatCurrency(change)}`}
                 </p>
                 {selectedCustomer && (
                   <p className="text-sm text-muted-foreground">
@@ -899,11 +890,11 @@ export default function POSPage() {
                   <span className="text-muted-foreground">
                     Tạm tính ({cart.reduce((s, i) => s + i.quantity, 0)} SP)
                   </span>
-                  <span className="font-mono">{fmt(subtotal)}đ</span>
+                  <span className="font-mono">{formatCurrency(subtotal)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg border-t pt-3">
                   <span>Tổng cộng</span>
-                  <span className="text-primary font-mono">{fmt(total)}đ</span>
+                  <span className="text-primary font-mono">{formatCurrency(total)}</span>
                 </div>
               </div>
 
@@ -937,12 +928,9 @@ export default function POSPage() {
                   <Input
                     type="text"
                     inputMode="numeric"
-                    value={amountPaid}
-                    onChange={(e) => {
-                      const v = e.target.value.replace(/\D/g, "");
-                      setAmountPaid(v ? fmt(Number(v)) : "");
-                    }}
-                    className="flex-1 text-right text-lg font-bold rounded-lg"
+                    value={formatMoneyInput(amountPaid)}
+                    onChange={(e) => setAmountPaid(parseMoneyInput(e.target.value))}
+                    className="flex-1 text-right text-lg font-bold rounded-lg tabular-nums"
                     placeholder="0"
                   />
                 </div>
@@ -952,13 +940,13 @@ export default function POSPage() {
                       <AlertCircle className="h-4 w-4 shrink-0" />
                       Còn thiếu:
                     </span>
-                    <span className="font-bold font-mono">{fmt(shortfall)}đ</span>
+                    <span className="font-bold font-mono">{formatCurrency(shortfall)}</span>
                   </div>
                 )}
                 {paidAmount >= total && paidAmount > 0 && (
                   <div className="flex justify-between p-3 rounded-xl bg-emerald-500/10 border border-emerald-200">
                     <span className="font-medium">Tiền thừa:</span>
-                    <span className="font-bold font-mono">{fmt(change)}đ</span>
+                    <span className="font-bold font-mono">{formatCurrency(change)}</span>
                   </div>
                 )}
               </div>

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatMoneyInput, parseMoneyInput, toNumber } from "@/lib/money";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
 import { getSession } from "@/src/auth/session";
@@ -32,15 +33,6 @@ import {
 } from "@/components/ui/dialog";
 
 const EMPTY_LINE = { productId: "", productName: "", quantity: 1, unitPrice: 0, discount: 0, unit: "" };
-
-function toNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function formatCurrency(value) {
-  return `${new Intl.NumberFormat("vi-VN").format(toNumber(value))}đ`;
-}
 
 function formatDateTime(value) {
   if (!value) return "--";
@@ -136,7 +128,7 @@ function InlineDateEditor({ order, onUpdate }) {
     const selectedDateStr = newDateValue.split('T')[0];
     const selectedDate = new Date(selectedDateStr);
     const today = new Date();
-    
+
     if (selectedDate.toDateString() === today.toDateString()) {
       const hours = String(today.getHours()).padStart(2, '0');
       const minutes = String(today.getMinutes()).padStart(2, '0');
@@ -212,14 +204,7 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
   const [saving, setSaving] = useState(false);
 
   const handlePaidNowChange = (e) => {
-    let value = e.target.value;
-    if (value.startsWith('0') && value.length > 1) {
-      value = value.replace(/^0+/, '');
-    }
-    if (value === '') {
-      value = '0';
-    }
-    setFormData(prev => ({ ...prev, paidNow: toNumber(value) }));
+    setFormData(prev => ({ ...prev, paidNow: parseMoneyInput(e.target.value) }));
   };
 
   const handlePaidNowFocus = (e) => {
@@ -247,7 +232,7 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
       if (PurchaseOrderService.update) {
         await PurchaseOrderService.update(order.id, payload);
       }
-      
+
       onSave();
       window.location.reload();
     } catch (err) {
@@ -272,7 +257,7 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
             placeholder="Tên nhà cung cấp"
           />
         </div>
-        
+
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="note">Ghi chú</Label>
           <Textarea
@@ -283,13 +268,13 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
             rows={3}
           />
         </div>
-        
+
         <div className="space-y-2">
           <Label htmlFor="paidNow">Đã thanh toán cho NCC</Label>
           <Input
             id="paidNow"
-            type="number"
-            value={formData.paidNow}
+            inputMode="numeric"
+            value={formatMoneyInput(formData.paidNow)}
             onChange={handlePaidNowChange}
             onFocus={handlePaidNowFocus}
             onBlur={handlePaidNowBlur}
@@ -299,7 +284,7 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
           <p className="text-xs text-muted-foreground">* Click vào ô để xóa số 0, nhập số tiền trực tiếp</p>
         </div>
       </div>
-      
+
       <div className="rounded-lg bg-muted/30 p-4">
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
@@ -318,7 +303,7 @@ function EditPurchaseOrderForm({ order, onSave, onCancel }) {
           </div>
         </div>
       </div>
-      
+
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={saving}>
           <X className="mr-2 h-4 w-4" />
@@ -358,7 +343,6 @@ Còn nợ: ${formatCurrency(order.debt)}`;
           <div className="border-b">
             <div className="flex gap-8">
               <button className="border-b-2 border-primary px-1 pb-3 text-sm font-semibold text-primary">Thông tin</button>
-              <button className="px-1 pb-3 text-sm font-semibold text-muted-foreground">Lịch sử thanh toán</button>
             </div>
           </div>
 
@@ -379,8 +363,8 @@ Còn nợ: ${formatCurrency(order.debt)}`;
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Ngày nhập</p>
-                  <InlineDateEditor 
-                    order={order} 
+                  <InlineDateEditor
+                    order={order}
                     onUpdate={onUpdateOrder}
                   />
                 </div>
@@ -613,7 +597,7 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleUpdateOrder = (updatedOrder) => {
-    setOrders((items) => 
+    setOrders((items) =>
       items.map((item) => item.id === updatedOrder.id ? updatedOrder : item)
     );
   };
@@ -721,8 +705,8 @@ export default function PurchaseOrdersPage() {
                         </Select>
                       </TableCell>
                       <TableCell><Input className="text-right" type="number" min="0" value={line.quantity} onChange={(e) => updateLine(index, "quantity", e.target.value)} /></TableCell>
-                      <TableCell><Input className="text-right" type="number" min="0" value={line.unitPrice} onChange={(e) => updateLine(index, "unitPrice", e.target.value)} /></TableCell>
-                      <TableCell><Input className="text-right" type="number" min="0" value={line.discount} onChange={(e) => updateLine(index, "discount", e.target.value)} /></TableCell>
+                      <TableCell><Input className="text-right tabular-nums" inputMode="numeric" value={formatMoneyInput(line.unitPrice)} onChange={(e) => updateLine(index, "unitPrice", parseMoneyInput(e.target.value))} /></TableCell>
+                      <TableCell><Input className="text-right tabular-nums" inputMode="numeric" value={formatMoneyInput(line.discount)} onChange={(e) => updateLine(index, "discount", parseMoneyInput(e.target.value))} /></TableCell>
                       <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(toNumber(line.quantity) * toNumber(line.unitPrice) - toNumber(line.discount))}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => setDraft((p) => {
@@ -759,7 +743,7 @@ export default function PurchaseOrdersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Thanh toán ngay</Label>
-                <Input type="number" value={draft.paidNow} onChange={(e) => setDraft((p) => ({ ...p, paidNow: e.target.value }))} />
+                <Input inputMode="numeric" value={formatMoneyInput(draft.paidNow)} onChange={(e) => setDraft((p) => ({ ...p, paidNow: parseMoneyInput(e.target.value) }))} />
               </div>
             </div>
             <div className="space-y-2">
@@ -841,10 +825,10 @@ export default function PurchaseOrdersPage() {
                   <TableCell><Badge variant="outline" className={cn("border", statusClass(order.status))}>{order.status}</Badge></TableCell>
                 </TableRow>
                 {expandedId === order.id && (
-                  <PurchaseOrderDetail 
+                  <PurchaseOrderDetail
                     order={order}
-                    onCopy={() => {}}
-                    onPrint={() => {}}
+                    onCopy={() => { }}
+                    onPrint={() => { }}
                     onUpdateOrder={handleUpdateOrder}
                     onEditOrder={openEditDialog}
                   />
@@ -876,7 +860,7 @@ export default function PurchaseOrdersPage() {
               Cập nhật thông tin phiếu nhập {editDialog.order?.code ?? ""}
             </DialogDescription>
           </DialogHeader>
-          
+
           {editDialog.order && (
             <EditPurchaseOrderForm
               order={editDialog.order}

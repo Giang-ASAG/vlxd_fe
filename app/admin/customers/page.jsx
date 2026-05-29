@@ -20,6 +20,7 @@ import {
   ChevronDown, ChevronUp, AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatMoneyInput, parseMoneyInput, toNumber } from "@/lib/money";
 import { usePagination } from "@/src/hooks/use-pagination";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
@@ -43,11 +44,6 @@ const PAYMENT_METHODS = ["Chuyển khoản", "Tiền mặt"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function toNumber(value) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : 0;
-}
-
 function createFormData(customer) {
   return {
     maKhachHang: customer?.maKhachHang?.toString() ?? "",
@@ -56,10 +52,6 @@ function createFormData(customer) {
     diaChi: customer?.address ?? "",
     hanMucNo: customer?.hanMucNo?.toString() ?? "",
   };
-}
-
-function formatCurrency(amount) {
-  return `${new Intl.NumberFormat("vi-VN").format(toNumber(amount))}đ`;
 }
 
 function formatDate(dateString) {
@@ -182,12 +174,11 @@ function PaymentDialog({ dialog, isSubmitting, onChange, onConfirm, onClose }) {
             <div className="relative">
               <Input
                 id="pay-amount"
-                type="number"
-                min="0"
-                value={dialog.amount}
-                onChange={(e) => onChange("amount", e.target.value)}
+                inputMode="numeric"
+                value={formatMoneyInput(dialog.amount)}
+                onChange={(e) => onChange("amount", parseMoneyInput(e.target.value))}
                 placeholder="0"
-                className="h-11 pr-8 text-base font-semibold"
+                className="h-11 pr-8 text-base font-semibold tabular-nums"
                 autoFocus
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">đ</span>
@@ -391,7 +382,7 @@ export default function CustomersPage() {
   // ─── Payment ──────────────────────────────────────────────────────────────────
 
   const openPayDialog = (items, defaultAmount = "") =>
-    setPayDialog({ open: true, items, amount: String(defaultAmount), method: "Chuyển khoản", note: "" });
+    setPayDialog({ open: true, items, amount: defaultAmount || "", method: "Chuyển khoản", note: "" });
   const closePayDialog = () => setPayDialog(EMPTY_PAY_DIALOG);
   const updatePayDialog = (field, value) => setPayDialog((prev) => ({ ...prev, [field]: value }));
 

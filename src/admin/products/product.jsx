@@ -76,6 +76,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatMoneyInput, parseMoneyInput, toNumber } from "@/lib/money";
 import {
   ProductService,
   CategoryService,
@@ -698,7 +699,7 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
                         </TableCell>
                         <TableCell>{item.donViChinh}</TableCell>
                         <TableCell className="text-right">
-                          {new Intl.NumberFormat("vi-VN").format(item.giaBanLe)}đ
+                          {formatCurrency(item.giaBanLe)}
                         </TableCell>
                         <TableCell className="text-right">{item.tonKhoHienTai}</TableCell>
                       </TableRow>
@@ -1000,7 +1001,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
   }, [product?.id, units]);
 
   const priceAfterTax = useMemo(() => {
-    const pbt = Number(form.priceBeforeTax) || 0;
+    const pbt = toNumber(form.priceBeforeTax);
     const vat = Number(form.vat) || 0;
     return Math.round(pbt * (1 + vat / 100));
   }, [form.priceBeforeTax, form.vat]);
@@ -1053,8 +1054,8 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     if (isCreate && isBlank(form.tonKhoHienTai)) errors.push("Tồn kho không được để trống");
     if (isCreate && isBlank(form.tonKhoToiThieu)) errors.push("Tồn thấp nhất không được để trống");
     if (isCreate && isBlank(form.tonKhoToiDa)) errors.push("Tồn cao nhất không được để trống");
-    if (!isBlank(form.cost) && Number(form.cost) < 0) errors.push("Giá vốn không được âm");
-    if (!isBlank(form.priceBeforeTax) && Number(form.priceBeforeTax) <= 0) errors.push("Giá bán trước thuế phải > 0");
+    if (!isBlank(form.cost) && toNumber(form.cost) < 0) errors.push("Giá vốn không được âm");
+    if (!isBlank(form.priceBeforeTax) && toNumber(form.priceBeforeTax) <= 0) errors.push("Giá bán trước thuế phải > 0");
     if (!isBlank(form.tonKhoHienTai) && Number(form.tonKhoHienTai) < 0) errors.push("Tồn kho không được âm");
     if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
     if (!isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < 0) errors.push("Tồn cao nhất không được âm");
@@ -1080,9 +1081,9 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
       name: form.name.trim(),
       sku: form.sku.trim(),
       price: priceAfterTax,
-      priceBeforeTax: Number(form.priceBeforeTax) || 0,
+      priceBeforeTax: toNumber(form.priceBeforeTax),
       vat: Number(form.vat) || 0,
-      cost: Number(form.cost) || 0,
+      cost: toNumber(form.cost),
       tonKhoHienTai: tonKhoFinal,
       tonKhoHienTaiAdd: tonKhoAdd,
       tonKhoToiThieu: Number(form.tonKhoToiThieu) || 0,
@@ -1212,11 +1213,11 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Giá vốn (đ){!product ? " *" : ""}</Label>
-                  <Input type="number" value={form.cost} onChange={set("cost")} className="h-10" required />
+                  <Input inputMode="numeric" value={formatMoneyInput(form.cost)} onChange={(e) => setForm((p) => ({ ...p, cost: parseMoneyInput(e.target.value) }))} className="h-10 tabular-nums" required />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Giá bán trước thuế *</Label>
-                  <Input type="number" value={form.priceBeforeTax} onChange={set("priceBeforeTax")} className="h-10" required />
+                  <Input inputMode="numeric" value={formatMoneyInput(form.priceBeforeTax)} onChange={(e) => setForm((p) => ({ ...p, priceBeforeTax: parseMoneyInput(e.target.value) }))} className="h-10 tabular-nums" required />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">VAT (%) *</Label>
@@ -1236,8 +1237,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
                   <Label className="text-sm font-medium text-primary">Giá bán sau thuế</Label>
                   <div className="relative">
                     <Input
-                      type="number"
-                      value={priceAfterTax}
+                      value={formatMoneyInput(priceAfterTax)}
                       readOnly
                       tabIndex={-1}
                       aria-readonly="true"
@@ -1553,7 +1553,7 @@ export function ProductTable() {
 
   const { currentPage, totalPages, paginatedItems, goToPage, pageSize, setPageSize, totalItems } = usePagination(filteredProducts, 10);
 
-  const formatPrice = (v) => new Intl.NumberFormat("vi-VN").format(v) + "đ";
+  const formatPrice = formatCurrency;
   const formatPurchaseStatus = (status) => {
     if (status === "da_nhap_kho") return "Hoàn thành";
     if (status === "cho_nhap") return "Chưa hoàn thành";
