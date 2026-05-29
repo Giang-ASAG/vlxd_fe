@@ -22,6 +22,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { formatCurrency, formatMoneyInput, parseMoneyInput, toNumber } from "@/lib/money";
 import { normalizePrintDraft, POS_PRINT_DRAFT_KEY } from "@/lib/pos-print";
 import { PageSizeSelect } from "@/src/admin/page-size-select";
 import { PaginationWrapper } from "@/src/admin/pagination-wrapper";
@@ -34,15 +35,6 @@ const statusConfig = {
   pending: { label: "Chưa thanh toán", className: "bg-destructive/10 text-destructive border-destructive/20" },
   partial: { label: "Thanh toán một phần", className: "bg-amber-100 text-amber-700 border-amber-200" },
 };
-
-function toNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function formatCurrency(amount) {
-  return `${new Intl.NumberFormat("vi-VN").format(toNumber(amount))}đ`;
-}
 
 function formatDateTime(value) {
   if (!value) return "--";
@@ -244,12 +236,12 @@ function PaymentModal({ isOpen, onClose, debtInfo, onSuccess, invoiceId }) {
 
   const handleSubmit = async () => {
     // Validate
-    if (!amount || Number(amount) <= 0) {
+    if (!amount || toNumber(amount) <= 0) {
       setError("Vui lòng nhập số tiền hợp lệ");
       return;
     }
 
-    if (Number(amount) > debtInfo.soTienNo) {
+    if (toNumber(amount) > debtInfo.soTienNo) {
       setError(`Số tiền thanh toán không được vượt quá số tiền nợ (${formatCurrency(debtInfo.soTienNo)})`);
       return;
     }
@@ -260,7 +252,7 @@ function PaymentModal({ isOpen, onClose, debtInfo, onSuccess, invoiceId }) {
     try {
       const payload = {
         ma_cn: debtInfo.id,
-        sotien: Number(amount),
+        sotien: toNumber(amount),
         ghichu: note || "Thanh toán công nợ",
         pttt: paymentMethod,
         ngaythanhtoan: new Date().toISOString()
@@ -313,10 +305,9 @@ function PaymentModal({ isOpen, onClose, debtInfo, onSuccess, invoiceId }) {
               id="amount"
               type="text"
               inputMode="numeric"
-              value={amount}
+              value={formatMoneyInput(amount)}
               onChange={(e) => {
-                const value = e.target.value.replace(/[^0-9]/g, '');
-                setAmount(value);
+                setAmount(parseMoneyInput(e.target.value));
                 setError("");
               }}
               placeholder="Nhập số tiền cần thanh toán"
@@ -740,14 +731,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
   };
 
   const handleSoTienTraChange = (e) => {
-    let value = e.target.value;
-    if (value.startsWith('0') && value.length > 1) {
-      value = value.replace(/^0+/, '');
-    }
-    if (value === '') {
-      value = '0';
-    }
-    handleChange("soTienTra", toNumber(value));
+    handleChange("soTienTra", parseMoneyInput(e.target.value));
   };
 
   const handleSoTienTraFocus = (e) => {
@@ -852,7 +836,7 @@ function EditInvoiceForm({ invoice, onSave, onCancel }) {
             id="soTienTra"
             type="text"
             inputMode="numeric"
-            value={formData.soTienTra}
+            value={formatMoneyInput(formData.soTienTra)}
             onChange={handleSoTienTraChange}
             onFocus={handleSoTienTraFocus}
             onBlur={handleSoTienTraBlur}

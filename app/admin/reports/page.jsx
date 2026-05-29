@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/money";
 import { ThongKeService } from "@/src/services/api-services";
 
 const CURRENCY_OPTIONS = ["VND"];
@@ -205,16 +206,6 @@ export default function FinancialReportPage() {
   const visibleRows = flatRows.slice(startIndex, startIndex + visibleCount);
   const topSpacer = startIndex * ROW_HEIGHT;
   const bottomSpacer = Math.max(0, (flatRows.length - startIndex - visibleRows.length) * ROW_HEIGHT);
-
-  const numberFormatter = useMemo(
-    () =>
-      new Intl.NumberFormat("vi-VN", {
-        style: "currency",
-        currency,
-        maximumFractionDigits: 0,
-      }),
-    [currency]
-  );
 
   const setPreset = (preset) => {
     if (preset === "today") setRange({ from: today, to: today });
@@ -448,8 +439,8 @@ export default function FinancialReportPage() {
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { icon: TrendingUp, label: "Tổng doanh thu", value: numberFormatter.format(totalRevenue), bg: "bg-primary/10", color: "text-primary" },
-          { icon: DollarSign, label: "Tổng lợi nhuận", value: numberFormatter.format(totalProfit), bg: totalProfit >= 0 ? "bg-emerald-100" : "bg-destructive/10", color: totalProfit >= 0 ? "text-emerald-700" : "text-destructive" },
+          { icon: TrendingUp, label: "Tổng doanh thu", value: formatCurrency(totalRevenue), bg: "bg-primary/10", color: "text-primary" },
+          { icon: DollarSign, label: "Tổng lợi nhuận", value: formatCurrency(totalProfit), bg: totalProfit >= 0 ? "bg-emerald-100" : "bg-destructive/10", color: totalProfit >= 0 ? "text-emerald-700" : "text-destructive" },
           { icon: CalendarIcon2, label: "Kỳ báo cáo", value: rangeSummary, bg: "bg-muted", color: "text-muted-foreground" },
         ].map(({ icon: Icon, label, value, bg, color }) => (
           <Card key={label} className="border-0 shadow-sm">
@@ -651,7 +642,7 @@ export default function FinancialReportPage() {
                                 (hovered.col === col.key || hovered.row === row.id) && "bg-primary/5"
                               )}
                             >
-                              {numberFormatter.format(value)}
+                              {formatCurrency(value)}
                             </td>
                           );
                         })}

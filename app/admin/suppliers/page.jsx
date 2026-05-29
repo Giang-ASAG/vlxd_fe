@@ -28,6 +28,7 @@ import {
   ProductService,
 } from "@/src/services/api-services";
 import { getSession } from "@/src/auth/session";
+import { formatCurrency, formatMoneyInput, parseMoneyInput, toNumber } from "@/lib/money";
 import * as XLSX from 'xlsx';
 
 
@@ -89,7 +90,6 @@ const TRANG_THAI_NHAP_COLOR = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function toNumber(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function toText(v) { return v == null ? "" : String(v); }
 
 function createFormData(s) {
@@ -100,10 +100,6 @@ function createFormData(s) {
     diaChi: s?.address ?? "",
     ghiChu: s?.ghiChu ?? "",
   };
-}
-
-function formatCurrencyVN(amount) {
-  return `${new Intl.NumberFormat("vi-VN").format(toNumber(amount))}đ`;
 }
 
 function formatDateTime(d) {
@@ -237,8 +233,8 @@ function SupplierProductsTab({ supplierId }) {
                   </TableCell>
                   <TableCell className="font-medium">{p.tenSanPham}</TableCell>
                   <TableCell className="text-muted-foreground">{p.donViChinh}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(p.giaNhapGanNhat)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(p.giaBanLe)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(p.giaNhapGanNhat)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(p.giaBanLe)}</TableCell>
                   <TableCell className="text-right">
                     <span className={cn(
                       "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
@@ -280,7 +276,7 @@ function SupplierStatsStrip({ supplier }) {
     { icon: Mail, label: "Email", value: supplier.email || "--", color: "text-primary", bg: "bg-primary/5" },
     { icon: MapPin, label: "Địa chỉ", value: supplier.address || "--", color: "text-muted-foreground", bg: "bg-muted/40" },
     {
-      icon: CreditCard, label: "Công nợ hiện tại", value: formatCurrencyVN(supplier.debt),
+      icon: CreditCard, label: "Công nợ hiện tại", value: formatCurrency(supplier.debt),
       color: toNumber(supplier.debt) > 0 ? "text-destructive" : "text-muted-foreground",
       bg: toNumber(supplier.debt) > 0 ? "bg-destructive/5" : "bg-muted/40"
     },
@@ -558,8 +554,8 @@ function PaymentDialog({ dialog, isSubmitting, onChange, onConfirm, onClose }) {
   const isBulk = dialog.items.length > 1;
   const total = dialog.items.reduce((s, x) => s + toNumber(x.soTienNo), 0);
   const subtitle = isBulk
-    ? `${dialog.items.length} khoản nợ · Tổng ${formatCurrencyVN(total)}`
-    : `Phiếu PN${String(dialog.items[0]?.maPhieuNhap ?? "").padStart(4, "0")} · Nợ ${formatCurrencyVN(dialog.items[0]?.soTienNo)}`;
+    ? `${dialog.items.length} khoản nợ · Tổng ${formatCurrency(total)}`
+    : `Phiếu PN${String(dialog.items[0]?.maPhieuNhap ?? "").padStart(4, "0")} · Nợ ${formatCurrency(dialog.items[0]?.soTienNo)}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
@@ -588,9 +584,9 @@ function PaymentDialog({ dialog, isSubmitting, onChange, onConfirm, onClose }) {
               Số tiền thanh toán <span className="text-destructive">*</span>
             </Label>
             <div className="relative">
-              <Input id="pay-amount" type="number" min="0" value={dialog.amount}
-                onChange={(e) => onChange("amount", e.target.value)}
-                placeholder="0" className="h-11 pr-8 text-base font-semibold" autoFocus />
+              <Input id="pay-amount" inputMode="numeric" value={formatMoneyInput(dialog.amount)}
+                onChange={(e) => onChange("amount", parseMoneyInput(e.target.value))}
+                placeholder="0" className="h-11 pr-8 text-base font-semibold tabular-nums" autoFocus />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">đ</span>
             </div>
             {isBulk && (
@@ -872,7 +868,7 @@ export default function SuppliersPage() {
   // ─── Payment ──────────────────────────────────────────────────────────────────
 
   const openPayDialog = (items, defaultAmount = "") =>
-    setPayDialog({ open: true, items, amount: String(defaultAmount), method: "Chuyển khoản", note: "" });
+    setPayDialog({ open: true, items, amount: defaultAmount || "", method: "Chuyển khoản", note: "" });
   const closePayDialog = () => setPayDialog(EMPTY_PAY_DIALOG);
   const updatePayDialog = (field, value) => setPayDialog((p) => ({ ...p, [field]: value }));
 
@@ -937,7 +933,7 @@ export default function SuppliersPage() {
       invalidatePaymentHistory(String(maNcc));
       await fetchSuppliers();
       closePayDialog();
-      showToast(`✅ Thanh toán thành công ${formatCurrencyVN(amount)}!`, "success");
+      showToast(`✅ Thanh toán thành công ${formatCurrency(amount)}!`, "success");
     } catch (err) {
       showToast(`❌ Lỗi: ${err.message}`, "error");
     }
@@ -1066,8 +1062,8 @@ export default function SuppliersPage() {
       <div className="grid gap-4 md:grid-cols-3">
         {[
           { icon: Building2, label: "Tổng nhà cung cấp", value: suppliers.length, bg: "bg-primary/10", color: "text-primary" },
-          { icon: Truck, label: "Tổng mua", value: formatCurrencyVN(totalPurchase), bg: "bg-accent/10", color: "text-accent" },
-          { icon: CreditCard, label: "Nợ cần trả", value: formatCurrencyVN(totalDebt), bg: "bg-destructive/10", color: "text-destructive" },
+          { icon: Truck, label: "Tổng mua", value: formatCurrency(totalPurchase), bg: "bg-accent/10", color: "text-accent" },
+          { icon: CreditCard, label: "Nợ cần trả", value: formatCurrency(totalDebt), bg: "bg-destructive/10", color: "text-destructive" },
         ].map(({ icon: Icon, label, value, bg, color }) => (
           <Card key={label} className="border-0 shadow-sm">
             <CardContent className="p-5">
@@ -1158,7 +1154,7 @@ export default function SuppliersPage() {
                     <TableCell className="text-right">
                       {supplier.debt > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
-                          {formatCurrencyVN(supplier.debt)}
+                          {formatCurrency(supplier.debt)}
                         </span>
                       ) : (
                         <span className="text-sm text-muted-foreground">—</span>
@@ -1166,7 +1162,7 @@ export default function SuppliersPage() {
                     </TableCell>
 
                     <TableCell className="text-right font-medium tabular-nums">
-                      {formatCurrencyVN(supplier.totalPurchase)}
+                      {formatCurrency(supplier.totalPurchase)}
                     </TableCell>
 
                     <TableCell>
@@ -1273,11 +1269,11 @@ export default function SuppliersPage() {
                                                 {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}
                                                 <TableCell>{item.tenKhoNhap}</TableCell>
                                                 <TableCell>{item.tenNguoiLap}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
-                                                <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrencyVN(item.daThanhToanNcc)}</TableCell>
+                                                <TableCell className="text-right tabular-nums">{formatCurrency(item.tongTienNhap)}</TableCell>
+                                                <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrency(item.daThanhToanNcc)}</TableCell>
                                                 <TableCell className="text-right">
                                                   <span className="font-semibold text-destructive tabular-nums">
-                                                    {formatCurrencyVN(item.soTienNo)}
+                                                    {formatCurrency(item.soTienNo)}
                                                   </span>
                                                 </TableCell>
                                                 <TableCell>
@@ -1303,7 +1299,7 @@ export default function SuppliersPage() {
                                       <div className="flex items-center justify-between rounded-lg bg-destructive/5 px-4 py-3">
                                         <p className="text-sm">
                                           Tổng nợ cần trả:{" "}
-                                          <span className="font-bold text-destructive">{formatCurrencyVN(totalDebtList)}</span>
+                                          <span className="font-bold text-destructive">{formatCurrency(totalDebtList)}</span>
                                         </p>
                                         <Button size="sm" onClick={() => openPayDialog(list, totalDebtList)} className="gap-1.5">
                                           <CreditCard className="h-3.5 w-3.5" /> Thanh toán tất cả
@@ -1381,9 +1377,9 @@ export default function SuppliersPage() {
                                                       <div className="text-xs text-muted-foreground">{lineCount} sản phẩm</div>
                                                     )}
                                                   </TableCell>
-                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(totalOrder)}</TableCell>
-                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(paid)}</TableCell>
-                                                  <TableCell className="text-right tabular-nums">{formatCurrencyVN(totalOrder - paid)}</TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrency(totalOrder)}</TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrency(paid)}</TableCell>
+                                                  <TableCell className="text-right tabular-nums">{formatCurrency(totalOrder - paid)}</TableCell>
                                                   <TableCell>
                                                     <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                                                       {item.trangThaiNhapHang ?? item.trangThai ?? "--"}
@@ -1399,7 +1395,7 @@ export default function SuppliersPage() {
 
                                     {list.length > 0 && (
                                       <div className="flex items-center justify-between rounded-lg bg-muted/5 px-4 py-3">
-                                        <p className="text-sm">Tổng: <span className="font-bold">{formatCurrencyVN(total)}</span></p>
+                                        <p className="text-sm">Tổng: <span className="font-bold">{formatCurrency(total)}</span></p>
                                       </div>
                                     )}
                                   </div>
@@ -1458,12 +1454,12 @@ export default function SuppliersPage() {
                                                 </TableCell>
                                                 {/* <TableCell>{item.loaiNhap ? item.tenKhoNhap : "Nhập cửa hàng"}</TableCell> */}
                                                 <TableCell>{item.tenKhoNhap}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongTienNhap)}</TableCell>
+                                                <TableCell className="text-right tabular-nums">{formatCurrency(item.tongTienNhap)}</TableCell>
                                                 <TableCell className="text-right font-semibold tabular-nums text-emerald-600">
-                                                  +{formatCurrencyVN(item.soTienThanhToan)}
+                                                  +{formatCurrency(item.soTienThanhToan)}
                                                 </TableCell>
-                                                <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.tongDaThanhToan)}</TableCell>
-                                                <TableCell className="text-right tabular-nums">{formatCurrencyVN(item.conNo)}</TableCell>
+                                                <TableCell className="text-right tabular-nums">{formatCurrency(item.tongDaThanhToan)}</TableCell>
+                                                <TableCell className="text-right tabular-nums">{formatCurrency(item.conNo)}</TableCell>
                                                 <TableCell>
                                                   <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                                                     {item.phuongThucThanhToan}

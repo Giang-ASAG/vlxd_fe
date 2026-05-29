@@ -1,5 +1,6 @@
 "use client";
 import { HandCoins, ReceiptText, TrendingUp } from "lucide-react";
+import { formatCurrency } from "@/lib/money";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -12,8 +13,6 @@ const expenses = [
   { id: "CP-003", category: "Nhân sự", note: "Lương bộ phận kho", amount: 28500000, date: "01/04/2026" },
   { id: "CP-004", category: "Vận hành", note: "Điện nước và bảo trì", amount: 6900000, date: "31/03/2026" },
 ];
-
-const formatCurrency = (value) => `${value.toLocaleString("vi-VN")}d`;
 
 export default function ExpensesPage() {
   const totalExpense = expenses.reduce((sum, item) => sum + item.amount, 0);

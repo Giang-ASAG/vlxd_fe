@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/money";
 import { ThongKeService } from "@/src/services/api-services";
 
 function formatPercentChange(value) {
@@ -14,7 +15,7 @@ function formatPercentChange(value) {
     }).format(Math.abs(n));
 }
 
-function formatCurrency(value) {
+function formatCompactCurrency(value) {
     const format = (num, unit) =>
         parseFloat(num.toFixed(1)).toString().replace(".", ",") + " " + unit;
 
@@ -28,10 +29,6 @@ function formatCurrency(value) {
         return format(value / 1_000, "Ngàn");
 
     return value.toString();
-}
-
-function formatFullCurrency(value) {
-    return new Intl.NumberFormat("vi-VN").format(value) + "đ";
 }
 
 function StatCard({ title, value, change, changeLabel, icon: Icon, iconColor, fullValue }) {
@@ -88,13 +85,13 @@ export function StatsCards() {
     }, []);
 
     // Format giá trị đầy đủ cho card doanh thu
-    const fullRevenueToday = data?.tongDoanhThu ? formatFullCurrency(data.tongDoanhThu) : null;
-    const fullRevenueYear = data?.doanhThuNamNay ? formatFullCurrency(data.doanhThuNamNay) : null;
+    const fullRevenueToday = data?.tongDoanhThu ? formatCurrency(data.tongDoanhThu) : null;
+    const fullRevenueYear = data?.doanhThuNamNay ? formatCurrency(data.doanhThuNamNay) : null;
 
     const stats = [
         {
             title: "Doanh thu hôm nay",
-            value: data ? formatCurrency(data.tongDoanhThu) : "...",
+            value: data ? formatCompactCurrency(data.tongDoanhThu) : "...",
             fullValue: fullRevenueToday,
             change: data ? data.tyle_doanhthu : 0,
             changeLabel: "so với hôm qua",
@@ -121,7 +118,7 @@ export function StatsCards() {
         },
         {
             title: "Doanh thu năm nay",
-            value: data ? formatCurrency(data.doanhThuNamNay) : "...",
+            value: data ? formatCompactCurrency(data.doanhThuNamNay) : "...",
             fullValue: fullRevenueYear,
             change: data ? data.tyle_theonam : 0,
             changeLabel: "so với năm trước",

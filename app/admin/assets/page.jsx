@@ -1,5 +1,6 @@
 "use client";
 import { Landmark, Wrench, ShieldCheck } from "lucide-react";
+import { formatCurrency } from "@/lib/money";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -11,8 +12,6 @@ const assets = [
   { code: "TS-002", name: "Xe nâng kho", type: "Thiết bị kho", value: 185000000, status: "Đang sử dụng", maintenanceDate: "12/05/2026" },
   { code: "TS-003", name: "Cân điện tử 5 tấn", type: "Thiết bị đo lường", value: 78000000, status: "Bảo trì", maintenanceDate: "15/04/2026" },
 ];
-
-const formatCurrency = (value) => `${value.toLocaleString("vi-VN")}d`;
 
 export default function AssetsPage() {
   const totalValue = assets.reduce((sum, item) => sum + item.value, 0);

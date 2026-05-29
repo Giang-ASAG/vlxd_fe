@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/money";
 import { ThongKeService } from "@/src/services/api-services";
 import { ShoppingBag, Loader2 } from "lucide-react";
 
@@ -12,9 +13,6 @@ const statusConfig = {
   thanh_toan_mot_phan: { label: "Thanh toán 1 phần", className: "bg-blue-100 text-blue-700 border-blue-200" },
   da_huy: { label: "Đã hủy", className: "bg-destructive/10 text-destructive border-destructive/20" },
 };
-
-const formatCurrency = (value) =>
-  new Intl.NumberFormat("vi-VN").format(value);
 
 export function RecentOrders() {
   const [orders, setOrders] = useState([]);
@@ -82,7 +80,7 @@ export function RecentOrders() {
                     <span className="text-sm text-muted-foreground">{order.tenKhachHang}</span>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-primary">{formatCurrency(order.tongTien)}đ</p>
+                    <p className="font-bold text-primary">{formatCurrency(order.tongTien)}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{order.thoiGianHienThi}</p>
                   </div>
                 </div>

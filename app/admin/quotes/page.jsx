@@ -1,5 +1,6 @@
 "use client";
 import { FileBadge, CircleDollarSign, Clock3 } from "lucide-react";
+import { formatCurrency } from "@/lib/money";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { usePagination } from "@/src/hooks/use-pagination";
@@ -11,8 +12,6 @@ const quotes = [
   { id: "BG-2026-002", customer: "Nhà thầu Hoàng Gia", value: 86000000, status: "Đã gửi", expireDate: "18/04/2026" },
   { id: "BG-2026-003", customer: "Công ty Đất Xanh", value: 243000000, status: "Đã chấp nhận", expireDate: "22/04/2026" },
 ];
-
-const formatCurrency = (value) => `${value.toLocaleString("vi-VN")}d`;
 
 export default function QuotesPage() {
   const totalValue = quotes.reduce((sum, quote) => sum + quote.value, 0);

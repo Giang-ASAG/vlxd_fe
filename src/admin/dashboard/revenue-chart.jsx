@@ -7,8 +7,9 @@ import {
 import { ThongKeService } from "@/src/services/api-services";
 import { TrendingUp, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/money";
 
-const formatCurrency = (value) => {
+const formatAxisTick = (value) => {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   return `${(value / 1000).toFixed(0)}K`;
 };
@@ -59,7 +60,7 @@ export function RevenueChart() {
             <div className="text-right">
               <p className="text-xs text-muted-foreground">Tổng doanh thu</p>
               <p className="text-lg font-bold text-primary">
-                {new Intl.NumberFormat("vi-VN").format(totalRevenue)}đ
+                {formatCurrency(totalRevenue)}
               </p>
             </div>
           )}
@@ -97,7 +98,7 @@ export function RevenueChart() {
                   />
                   <YAxis
                     className="text-xs"
-                    tickFormatter={formatCurrency}
+                    tickFormatter={formatAxisTick}
                     tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                     axisLine={{ stroke: "hsl(var(--border))" }}
                     tickLine={{ stroke: "hsl(var(--border))" }}
@@ -115,10 +116,7 @@ export function RevenueChart() {
                       fontWeight: "bold",
                       marginBottom: "4px",
                     }}
-                    formatter={(value) => [
-                      new Intl.NumberFormat("vi-VN").format(value) + "đ", 
-                      "Doanh thu"
-                    ]}
+                    formatter={(value) => [formatCurrency(value), "Doanh thu"]}
                     cursor={{ stroke: "hsl(var(--primary))", strokeWidth: 1, strokeDasharray: "4 4" }}
                   />
                   <Area
@@ -139,7 +137,7 @@ export function RevenueChart() {
                   <div>
                     <span className="font-medium text-foreground">Trung bình/ngày: </span>
                     <span className="font-semibold text-primary">
-                      {new Intl.NumberFormat("vi-VN").format(avgRevenue)}đ
+                      {formatCurrency(avgRevenue)}
                     </span>
                   </div>
                   <div>
