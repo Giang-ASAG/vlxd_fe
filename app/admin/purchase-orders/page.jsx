@@ -323,11 +323,11 @@ function PurchaseOrderDetail({ order, onCopy, onPrint, onUpdateOrder, onEditOrde
 
   const handleCopy = () => {
     const text = `Phiếu nhập: ${order.code}
-Ngày nhập: ${formatDateTime(order.createdAt)}
-Nhà cung cấp: ${order.supplierName}
-Tổng tiền: ${formatCurrency(order.total)}
-Đã trả: ${formatCurrency(order.paid)}
-Còn nợ: ${formatCurrency(order.debt)}`;
+                  Ngày nhập: ${formatDateTime(order.createdAt)}
+                  Nhà cung cấp: ${order.supplierName}
+                  Tổng tiền: ${formatCurrency(order.total)}
+                  Đã trả: ${formatCurrency(order.paid)}
+                  Còn nợ: ${formatCurrency(order.debt)}`;
     navigator.clipboard.writeText(text);
     alert("Đã sao chép thông tin");
   };
@@ -645,7 +645,7 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
+      {/* <div className="grid gap-3 md:grid-cols-3">
         <Card className="rounded-lg shadow-sm">
           <CardContent className="flex items-center gap-3 p-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><PackagePlus className="h-5 w-5" /></div>
@@ -664,7 +664,7 @@ export default function PurchaseOrdersPage() {
             <div><p className="text-xs text-muted-foreground">Cần trả NCC</p><p className="text-xl font-bold">{formatCurrency(stats.debt)}</p></div>
           </CardContent>
         </Card>
-      </div>
+      </div> */}
 
       {draftOpen && (
         <div className="grid gap-4 rounded-lg border bg-card p-4 shadow-sm xl:grid-cols-[1fr_340px]">

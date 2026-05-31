@@ -28,6 +28,7 @@ import {
   CustomerService,
   CongNoKhachHangService,
   LichSuThanhToanService,
+  InvoiceService,
 } from "@/src/services/api-services";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -63,6 +64,46 @@ function formatDate(dateString) {
 function getInitials(name) {
   if (!name) return "?";
   return name.trim().split(/\s+/).map((w) => w[0]).slice(-2).join("").toUpperCase();
+}
+
+function mapDonHang(order) {
+  const statusMap = {
+    da_thanh_toan: "completed",
+    chua_thanh_toan: "pending",
+    thanh_toan_mot_phan: "partial",
+    tra_mot_phan: "partial",
+  };
+
+  const details = order?.chiTietHoaDonDtos ?? order?.chiTiet ?? [];
+  const total = toNumber(order?.tongTien);
+  const paid = toNumber(order?.soTienTra ?? order?.khachDaTra);
+  const id = order?.maDonHang ?? order?.id ?? "";
+  const createdAt = order?.ngayTao ?? order?.ngayBan ?? order?.createdAt;
+  const paymentMethod = order?.hinhThuc === true ? "Chuyển khoản" : "Tiền mặt";
+
+  return {
+    raw: order,
+    id: String(id),
+    code: id ? `HD${String(id).padStart(6, "0")}` : "--",
+    returnCode: order?.maTraHang ? `TH${String(order.maTraHang).padStart(6, "0")}` : "",
+    customerCode: order?.maKhachHang ? `KH${String(order.maKhachHang).padStart(6, "0")}` : "--",
+    customer: order?.tenKhachHang || "Khách lẻ",
+    phone: order?.soDienThoai ?? order?.sdt ?? "",
+    address: order?.diaChi ?? order?.diaChiGiaoHang ?? "",
+    note: order?.ghiChu ?? "",
+    createdAt,
+    total,
+    discount: toNumber(order?.giamGia ?? order?.giamGiaHoaDon),
+    paid,
+    debt: Math.max(0, total - paid),
+    status: statusMap[order?.trangThaiThanhToan] ?? (paid >= total ? "completed" : paid > 0 ? "partial" : "pending"),
+    createdBy: order?.tenNguoiTao ?? order?.tenNguoiBan ?? "--",
+    seller: order?.tenNguoiBan ?? order?.tenNguoiTao ?? "--",
+    channel: order?.kenhBan ?? "Bán trực tiếp",
+    priceBook: order?.bangGia ?? "Bảng giá chung",
+    paymentMethod,
+    details,
+  };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -245,6 +286,8 @@ export default function CustomersPage() {
   const [congNoLoading, setCongNoLoading]       = useState(false);
   const [paymentHistory, setPaymentHistory]     = useState({});
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
+  const [purchaseHistory, setPurchaseHistory]   = useState({});
+  const [purchaseHistoryLoading, setPurchaseHistoryLoading] = useState(false);
   const [payDialog, setPayDialog]               = useState(EMPTY_PAY_DIALOG);
 
   // ─── API ────────────────────────────────────────────────────────────────────
@@ -306,8 +349,26 @@ export default function CustomersPage() {
     }
   };
 
+  const fetchPurchaseHistory = async (customerId) => {
+    if (purchaseHistory[customerId] !== undefined) return;
+    setPurchaseHistoryLoading(true);
+    try {
+      const response = await InvoiceService.getAll();
+      const allInvoices = response?.data ?? [];
+      const filtered = allInvoices.filter(
+        (invoice) => Number(invoice.maKhachHang) === Number(customerId)
+      );
+      setPurchaseHistory((prev) => ({ ...prev, [customerId]: filtered }));
+    } catch {
+      setPurchaseHistory((prev) => ({ ...prev, [customerId]: [] }));
+    } finally {
+      setPurchaseHistoryLoading(false);
+    }
+  };
+
   const invalidateCongNo = (id) => setCongNoData((p) => { const n = { ...p }; delete n[id]; return n; });
   const invalidatePaymentHistory = (id) => setPaymentHistory((p) => { const n = { ...p }; delete n[id]; return n; });
+  const invalidatePurchaseHistory = (id) => setPurchaseHistory((p) => { const n = { ...p }; delete n[id]; return n; });
 
   useEffect(() => { fetchCustomers(); }, []);
 
@@ -436,6 +497,7 @@ export default function CustomersPage() {
       const maKh = items[0]?.maKhachHang;
       invalidateCongNo(String(maKh));
       invalidatePaymentHistory(String(maKh));
+      invalidatePurchaseHistory(String(maKh));
       await fetchCustomers();
       closePayDialog();
       alert("Đã ghi nhận thanh toán thành công.");
@@ -721,7 +783,7 @@ export default function CustomersPage() {
                             <Tabs
                               defaultValue="info"
                               onValueChange={(val) => {
-                                if (val === "debt") fetchCongNo(customer.id);
+                                if (val === "purchase-history") fetchPurchaseHistory(customer.id);
                                 if (val === "history") fetchPaymentHistory(customer.id);
                               }}
                             >
@@ -729,8 +791,8 @@ export default function CustomersPage() {
                                 <TabsTrigger value="info" className="rounded-md px-4 text-xs">
                                   Thông tin
                                 </TabsTrigger>
-                                <TabsTrigger value="debt" className="gap-1.5 rounded-md px-4 text-xs">
-                                  <CreditCard className="h-3.5 w-3.5" /> Công nợ
+                                <TabsTrigger value="purchase-history" className="gap-1.5 rounded-md px-4 text-xs">
+                                  <Package className="h-3.5 w-3.5" /> Lịch sử mua hàng
                                 </TabsTrigger>
                                 <TabsTrigger value="history" className="gap-1.5 rounded-md px-4 text-xs">
                                   <History className="h-3.5 w-3.5" /> Lịch sử TT
@@ -742,26 +804,23 @@ export default function CustomersPage() {
                                 {renderCustomerForm("edit", customer)}
                               </TabsContent>
 
-                              {/* Tab: Công nợ */}
-                              <TabsContent value="debt" className="mt-4">
+                              {/* Tab: Lịch sử mua hàng */}
+                              <TabsContent value="purchase-history" className="mt-4">
                                 {(() => {
-                                  const list = (congNoData[customer.id] ?? []).filter(
-                                    (x) => x.trangThaiNo !== "da_thanh_toan"
-                                  );
-                                  const total = list.reduce((s, x) => s + toNumber(x.soTienNo), 0);
+                                  const list = purchaseHistory[customer.id] ?? [];
                                   return (
                                     <div className="space-y-4 rounded-xl border bg-background p-4 shadow-sm">
                                       <div className="flex items-center justify-between">
                                         <div>
-                                          <h3 className="text-sm font-semibold">Công nợ khách hàng</h3>
-                                          <p className="text-xs text-muted-foreground">Các đơn chưa thanh toán</p>
+                                          <h3 className="text-sm font-semibold">Lịch sử mua hàng</h3>
+                                          <p className="text-xs text-muted-foreground">Các hóa đơn đã mua</p>
                                         </div>
                                         <Badge variant="secondary" className="text-xs">
-                                          {list.length} khoản nợ
+                                          {list.length} hóa đơn
                                         </Badge>
                                       </div>
 
-                                      {congNoLoading && congNoData[customer.id] === undefined ? (
+                                      {purchaseHistoryLoading && purchaseHistory[customer.id] === undefined ? (
                                         <div className="flex h-24 items-center justify-center gap-2 text-muted-foreground">
                                           <Loader2 className="h-4 w-4 animate-spin" />
                                           <span className="text-sm">Đang tải...</span>
@@ -772,55 +831,49 @@ export default function CustomersPage() {
                                             <TableHeader>
                                               <TableRow className="bg-muted/40 hover:bg-muted/40 text-xs">
                                                 <TableHead>Mã đơn</TableHead>
-                                                <TableHead>Ngày phát sinh</TableHead>
+                                                <TableHead>Ngày bán</TableHead>
                                                 <TableHead className="text-right">Tổng tiền</TableHead>
-                                                <TableHead className="text-right">Đã TT</TableHead>
+                                                <TableHead className="text-right">Đã thanh toán</TableHead>
                                                 <TableHead className="text-right">Còn nợ</TableHead>
                                                 <TableHead>Trạng thái</TableHead>
-                                                <TableHead />
                                               </TableRow>
                                             </TableHeader>
                                             <TableBody>
                                               {list.length === 0 ? (
                                                 <TableRow>
-                                                  <TableCell colSpan={7} className="h-20 text-center text-sm text-muted-foreground">
-                                                    Không có khoản nợ nào 🎉
+                                                  <TableCell colSpan={6} className="h-20 text-center text-sm text-muted-foreground">
+                                                    Chưa có đơn hàng nào 🛍️
                                                   </TableCell>
                                                 </TableRow>
-                                              ) : list.map((item) => (
-                                                <TableRow key={item.idCongNo} className="text-sm hover:bg-muted/30">
-                                                  <TableCell className="font-medium">{item.maDonHang}</TableCell>
-                                                  <TableCell className="text-muted-foreground">{formatDate(item.ngayPhatSinh)}</TableCell>
-                                                  <TableCell className="text-right tabular-nums">{formatCurrency(item.tongTienDonHang)}</TableCell>
-                                                  <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrency(item.soTienDaTra)}</TableCell>
-                                                  <TableCell className="text-right">
-                                                    <span className="font-semibold text-destructive tabular-nums">
-                                                      {formatCurrency(item.soTienNo)}
-                                                    </span>
-                                                  </TableCell>
-                                                  <TableCell><StatusBadge status={item.trangThaiNo} /></TableCell>
-                                                  <TableCell>
-                                                    <Button size="sm" variant="outline" className="h-7 text-xs"
-                                                      onClick={() => openPayDialog([item], item.soTienNo)}>
-                                                      Thanh toán
-                                                    </Button>
-                                                  </TableCell>
-                                                </TableRow>
-                                              ))}
+                                              ) : list.map((item) => {
+                                                const mapped = mapDonHang(item);
+                                                return (
+                                                  <TableRow key={mapped.id} className="text-sm hover:bg-muted/30">
+                                                    <TableCell className="font-medium">{mapped.code}</TableCell>
+                                                    <TableCell className="text-muted-foreground">{formatDate(mapped.createdAt)}</TableCell>
+                                                    <TableCell className="text-right tabular-nums">{formatCurrency(mapped.total)}</TableCell>
+                                                    <TableCell className="text-right tabular-nums text-muted-foreground">{formatCurrency(mapped.paid)}</TableCell>
+                                                    <TableCell className="text-right">
+                                                      <span className={cn("tabular-nums", mapped.debt > 0 ? "font-semibold text-destructive" : "text-muted-foreground")}>
+                                                        {formatCurrency(mapped.debt)}
+                                                      </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                      <span className={cn(
+                                                        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+                                                        mapped.status === "completed" ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+                                                        mapped.status === "pending" ? "bg-destructive/10 text-destructive border-destructive/20" :
+                                                        "bg-amber-100 text-amber-700 border-amber-200"
+                                                      )}>
+                                                        {mapped.status === "completed" ? "Hoàn thành" :
+                                                         mapped.status === "pending" ? "Chưa thanh toán" : "Thanh toán một phần"}
+                                                      </span>
+                                                    </TableCell>
+                                                  </TableRow>
+                                                );
+                                              })}
                                             </TableBody>
                                           </Table>
-                                        </div>
-                                      )}
-
-                                      {list.length > 0 && (
-                                        <div className="flex items-center justify-between rounded-lg bg-destructive/5 px-4 py-3">
-                                          <p className="text-sm">
-                                            Tổng nợ:{" "}
-                                            <span className="font-bold text-destructive">{formatCurrency(total)}</span>
-                                          </p>
-                                          <Button size="sm" onClick={() => openPayDialog(list, total)} className="gap-1.5">
-                                            <CreditCard className="h-3.5 w-3.5" /> Thanh toán tất cả
-                                          </Button>
                                         </div>
                                       )}
                                     </div>
