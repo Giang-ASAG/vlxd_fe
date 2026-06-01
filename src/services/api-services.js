@@ -194,11 +194,6 @@ export const PurchaseOrderService = {
    * Tạo phiếu nhập hàng
    */
   create: (data) => api.post("/PhieuNhapKhos", data),
-
-  /**
-   * Nhập thêm hàng cho sản phẩm đã có
-   */
-  nhapThemHang: (data) => api.post("/PhieuNhapKhos/nhap-them-hang", data),
 };
 export const SupplierPaymentService = {
   /**

@@ -167,32 +167,19 @@ export function PurchasePOS({ open, onClose, onSuccess }) {
                 ? { maPhieuNhap: Number(receiptCode) }
                 : {};
 
+            // API expects a different payload shape (chiTiets, maKhoNhap, maNguoiLap)
             await PurchaseOrderService.create({
                 ...receiptPayload,
                 maNcc: Number(draft.supplierId),
-                maNhaCungCap: Number(draft.supplierId),
-                maNguoiNhap: getUserId(),
-                maNguoiDung: getUserId(),
-                maKho: 1,
+                maKhoNhap: 1,
+                maNguoiLap: getUserId(),
                 ngayNhap: normalizeDateTimeForApi(draft.receiptDate),
                 ghiChu: draft.note,
                 soTienThanhToanNgay: toNumber(draft.paidNow),
-                chiTietPhieuNhapDtos: validLines.map((line) => ({
+                chiTiets: validLines.map((line) => ({
                     maSanPham: Number(line.productId),
-                    soLuongNhap: toNumber(line.quantity),
-                    soLuong: toNumber(line.quantity),
-                    donGiaNhap: toNumber(line.unitPrice),
-                    giaNhap: toNumber(line.unitPrice),
-                    giamGia: 0,
-                })),
-                sanPhamDtos: validLines.map((line) => ({
-                    id: 0,
-                    maPhieuNhap: receiptPayload.maPhieuNhap ?? 0,
-                    maSanPham: Number(line.productId),
-                    tenSanPham: line.product.name,
                     soLuong: toNumber(line.quantity),
                     giaNhap: toNumber(line.unitPrice),
-                    thanhTien: lineTotal(line),
                 })),
             });
             onSuccess();

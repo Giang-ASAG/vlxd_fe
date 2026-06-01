@@ -191,7 +191,6 @@ const EMPTY_FORM = {
   vat: "0",
   cost: "",
   tonKhoHienTai: "0",
-  tonKhoHienTaiAdd: "0",
   tonKhoToiThieu: "0",
   tonKhoToiDa: "999999999",
   unit: "",
@@ -308,9 +307,9 @@ function generateSkuFromName(name) {
     .map((w) => w.charAt(0).toUpperCase())
     .filter((c) => c.match(/[A-Z0-9]/))
     .join("");
-  
+
   if (!initials) return "";
-  
+
   const randomDigits = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
   return `${initials}-${randomDigits}`;
 }
@@ -419,13 +418,13 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
       try {
         const data = new Uint8Array(event.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
-        
-        const productSheetName = workbook.SheetNames.find(name => 
-          name.toLowerCase().includes('sản phẩm') || 
+
+        const productSheetName = workbook.SheetNames.find(name =>
+          name.toLowerCase().includes('sản phẩm') ||
           name.toLowerCase().includes('product') ||
           name.toLowerCase().includes('hang hoa')
         ) || workbook.SheetNames[0];
-        
+
         const productSheet = workbook.Sheets[productSheetName];
         const jsonData = XLSX.utils.sheet_to_json(productSheet);
 
@@ -561,22 +560,22 @@ function ProductImportDialog({ isOpen, onClose, onImport, isImporting, categorie
     const ws = XLSX.utils.json_to_sheet(templateData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "SanPham");
-    
+
     const categorySheet = XLSX.utils.json_to_sheet(
       categories.map(c => ({ "Mã nhóm": c.maDanhMuc, "Tên nhóm hàng": c.tenDanhMuc }))
     );
     XLSX.utils.book_append_sheet(wb, categorySheet, "NhomHang");
-    
+
     const unitSheet = XLSX.utils.json_to_sheet(
       unitList.map((u) => ({ "Đơn vị tính": u }))
     );
     XLSX.utils.book_append_sheet(wb, unitSheet, "DonViTinh");
-    
+
     const supplierSheet = XLSX.utils.json_to_sheet(
       suppliers.map(s => ({ "Mã NCC": s.maNcc, "Tên nhà cung cấp": s.tenNcc }))
     );
     XLSX.utils.book_append_sheet(wb, supplierSheet, "NhaCungCap");
-    
+
     XLSX.writeFile(wb, `mau_nhap_san_pham_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
@@ -779,10 +778,10 @@ function resolveVatPercentFromApi(p) {
 
 function mapProduct(p, danhMucMap, supplierMap, dmList = [], supplierList = []) {
   const currentInventory = Number(p.tonKhoHienTai ?? p.TonKhoHienTai ?? 0);
-  
+
   let status = "active";
   if (currentInventory <= 0) status = "out_of_stock";
-  else if (currentInventory <= 100) status = "low_stock";
+  else if (currentInventory <= 30) status = "low_stock";
 
   const vatPercent = resolveVatPercentFromApi(p);
   const rawDonVi = String(p.donViChinh ?? p.DonViChinh ?? "").trim();
@@ -978,7 +977,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
         vat: vatStr,
         cost: String(product.cost ?? ""),
         tonKhoHienTai: String(product.tonKhoHienTai ?? "0"),
-        tonKhoHienTaiAdd: "0",
         tonKhoToiThieu: String(product.tonKhoToiThieu ?? "0"),
         tonKhoToiDa: String(product.tonKhoToiDa ?? "999999999"),
         unit: getProductUnit(product),
@@ -1013,7 +1011,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
 
   const set = (key) => (e) => {
     let value = e.target.value;
-    if (key === "tonKhoHienTaiAdd" && Number(value) < 0);
     if (key === "tonKhoToiThieu" && Number(value) < 0) value = "0";
     if (key === "tonKhoToiDa" && Number(value) > 999999999) value = "999999999";
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -1039,7 +1036,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
     // Validation
     const isCreate = !product;
     const isBlank = (value) => value === null || value === undefined || String(value).trim() === "";
@@ -1057,12 +1054,16 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     if (!isBlank(form.cost) && toNumber(form.cost) < 0) errors.push("Giá vốn không được âm");
     if (!isBlank(form.priceBeforeTax) && toNumber(form.priceBeforeTax) <= 0) errors.push("Giá bán trước thuế phải > 0");
     if (!isBlank(form.tonKhoHienTai) && Number(form.tonKhoHienTai) < 0) errors.push("Tồn kho không được âm");
-    if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
+    if (
+      !isBlank(form.tonKhoHienTai) &&
+      !isBlank(form.tonKhoToiThieu) &&
+      Number(form.tonKhoHienTai) <= Number(form.tonKhoToiThieu)
+    ) errors.push("Tồn kho hiện tại phải lớn hơn tồn kho thấp nhất"); if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
     if (!isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < 0) errors.push("Tồn cao nhất không được âm");
     if (!isBlank(form.tonKhoToiThieu) && !isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < Number(form.tonKhoToiThieu)) {
       errors.push("Tồn cao nhất phải lớn hơn hoặc bằng tồn thấp nhất");
     }
-    
+
     if (errors.length > 0) {
       const message = `${isCreate ? "Không thể thêm sản phẩm" : "Không thể lưu sản phẩm"}.\nVui lòng nhập đầy đủ thông tin:\n${errors.join("\n")}`;
       if (onValidationError) {
@@ -1073,9 +1074,7 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
       return;
     }
 
-    const isEdit = Boolean(product);
-    const tonKhoAdd = Number(form.tonKhoHienTaiAdd ?? 0) || 0;
-    const tonKhoFinal = isEdit ? (Number(product?.tonKhoHienTai ?? 0) || 0) + tonKhoAdd : Number(form.tonKhoHienTai) || 0;
+    const tonKhoFinal = Number(form.tonKhoHienTai) || 0;
 
     onSave({
       name: form.name.trim(),
@@ -1085,7 +1084,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
       vat: Number(form.vat) || 0,
       cost: toNumber(form.cost),
       tonKhoHienTai: tonKhoFinal,
-      tonKhoHienTaiAdd: tonKhoAdd,
       tonKhoToiThieu: Number(form.tonKhoToiThieu) || 0,
       tonKhoToiDa: Number(form.tonKhoToiDa) || 999999999,
       maDanhMuc: form.maDanhMuc ? Number(form.maDanhMuc) : null,
@@ -1095,7 +1093,6 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     });
   };
 
-  const displayedTonKhoHienTai = product ? String(Number(form.tonKhoHienTai) + (Number(form.tonKhoHienTaiAdd) || 0)) : form.tonKhoHienTai;
   const vatSelectValue = VAT_SELECT_VALUES.has(form.vat) ? form.vat : "0";
   const categoryKnown = danhMucs.some((d) => String(d.maDanhMuc) === form.maDanhMuc);
   const supplierKnown = suppliers.some((s) => String(s.maNcc) === form.maNccMacDinh);
@@ -1260,23 +1257,16 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
             <AccordionContent className="p-4 bg-card border-t">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">{product ? "Tồn kho hiện tại" : "Tồn kho *"}</Label>
+                  <Label className="text-sm font-medium">Tồn kho {!product}</Label>
                   <Input
                     type="number"
-                    value={displayedTonKhoHienTai}
+                    min="0"
+                    value={form.tonKhoHienTai}
                     onChange={set("tonKhoHienTai")}
-                    className={cn("h-10", product && "bg-muted/60 text-muted-foreground cursor-not-allowed")}
-                    readOnly={!!product}
-                    disabled={!!product}
-                    required={!product}
+                    className="h-10"
+                    required
                   />
                 </div>
-                {product && (
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium">Tồn kho cần thêm</Label>
-                    <Input type="number" min="0" value={form.tonKhoHienTaiAdd} onChange={set("tonKhoHienTaiAdd")} className="h-10" />
-                  </div>
-                )}
                 <div className="space-y-1.5">
                   <Label className="text-sm font-medium">Tồn thấp nhất{!product ? " *" : ""}</Label>
                   <Input type="number" value={form.tonKhoToiThieu} onChange={set("tonKhoToiThieu")} className="h-10" required />
@@ -1325,11 +1315,11 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
           </DialogFooter>
         </DialogContent>
       </Dialog>
-        <UnitsManagerDialog
-          open={showManageUnits}
-          onOpenChange={setShowManageUnits}
-          onUnitsChange={handleUnitsChange}
-        />
+      <UnitsManagerDialog
+        open={showManageUnits}
+        onOpenChange={setShowManageUnits}
+        onUnitsChange={handleUnitsChange}
+      />
     </div>
   );
 }
@@ -1385,11 +1375,11 @@ export function ProductTable() {
   const [deleting, setDeleting] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState(null);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
-  
+
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  
+
   // Toast states
   const [toast, setToast] = useState(null);
 
@@ -1453,7 +1443,7 @@ export function ProductTable() {
       const existingProducts = await ProductService.getAll();
       const existingProductNames = new Set();
       const existingProductSkus = new Set();
-      
+
       if (existingProducts?.data) {
         existingProducts.data.forEach(product => {
           if (product.tenSanPham) {
@@ -1467,10 +1457,10 @@ export function ProductTable() {
 
       for (let i = 0; i < importData.length; i++) {
         const product = importData[i];
-        
+
         const isDuplicateName = existingProductNames.has(product.tenSanPham.toLowerCase().trim());
         const isDuplicateSku = product.maSku && existingProductSkus.has(product.maSku.toLowerCase().trim());
-        
+
         if (isDuplicateName || isDuplicateSku) {
           duplicateCount++;
           duplicates.push({
@@ -1486,7 +1476,7 @@ export function ProductTable() {
           errors.push(`${product.tenSanPham}: Thiếu đơn vị tính`);
           continue;
         }
-        
+
         try {
           const payload = {
             maSku: product.maSku || null,
@@ -1507,7 +1497,7 @@ export function ProductTable() {
 
           await ProductService.create(payload);
           successCount++;
-          
+
           existingProductNames.add(product.tenSanPham.toLowerCase().trim());
           if (product.maSku) {
             existingProductSkus.add(product.maSku.toLowerCase().trim());
@@ -1519,23 +1509,23 @@ export function ProductTable() {
       }
 
       await loadData();
-      
+
       setImportDialogOpen(false);
-      
-      let message = `📊 KẾT QUẢ IMPORT\n\n`;
-      message += `✅ Thành công: ${successCount} sản phẩm\n`;
-      message += `⚠️ Trùng lặp: ${duplicateCount} sản phẩm\n`;
-      message += `❌ Thất bại: ${errorCount} sản phẩm\n`;
-      message += `📝 Tổng số: ${importData.length} sản phẩm\n`;
-      
+
+      let message = `KẾT QUẢ IMPORT\n\n`;
+      message += `Thành công: ${successCount} sản phẩm\n`;
+      message += `Trùng lặp: ${duplicateCount} sản phẩm\n`;
+      message += `Thất bại: ${errorCount} sản phẩm\n`;
+      message += `Tổng số: ${importData.length} sản phẩm\n`;
+
       if (duplicates.length > 0) {
         message += `\n🔁 Danh sách trùng: ${duplicates.slice(0, 5).map(d => d.name).join(", ")}`;
         if (duplicates.length > 5) message += `... và ${duplicates.length - 5} sản phẩm khác`;
       }
-      
+
       showToast(message, successCount > 0 ? "success" : "warning");
       setImportResult({ successCount, errorCount, duplicateCount, errors, duplicates, total: importData.length });
-      
+
       setTimeout(() => setImportResult(null), 8000);
     } catch (err) {
       showToast(`❌ Lỗi khi import: ${err.message}`, "error");
@@ -1573,53 +1563,38 @@ export function ProductTable() {
         maNguoiLap: session.user?.sub ? Number(session.user?.sub) : 1,
         maDanhMuc: (() => {
           const n = Number(formData.maDanhMuc);
-          return Number.isFinite(n) && String(formData.maDanhMuc).trim() !== "" ? n : null;
+          return Number.isFinite(n) && n > 0 ? n : null;
         })(),
         maNccMacDinh: (() => {
           const n = Number(formData.maNccMacDinh);
-          return Number.isFinite(n) && String(formData.maNccMacDinh).trim() !== "" ? n : null;
+          return Number.isFinite(n) && n > 0 ? n : null;
         })(),
         donViChinh: trimUnit(formData.unit ?? formData.donViChinh),
         giaNhapGanNhat: Number(formData.cost) || 0,
         giaBanLe: Number(formData.priceBeforeTax) || 0,
         thue: Number(formData.vat) || 0,
-        giaSauThue: Number(formData.price) || 0,
+        giaSauThue: Math.round(                                          // ← recompute
+          (Number(formData.priceBeforeTax) || 0) *
+          (1 + (Number(formData.vat) || 0) / 100)
+        ),
         tonKhoHienTai: Number(formData.tonKhoHienTai) || 0,
         tonKhoToiThieu: Number(formData.tonKhoToiThieu) || 0,
-        tonKhoToiDa: Number(formData.tonKhoToiDa) || 0,
+        tonKhoToiDa: Number(formData.tonKhoToiDa) || 999999999,          // ← safe default
         ngayTao: formData.ngayTao ?? new Date().toISOString(),
       };
 
       if (isEdit) {
-        const tonKhoNhap = Number(formData.tonKhoHienTaiAdd) || 0;
-        const shouldImportMore = tonKhoNhap > 0;
-
-        if (shouldImportMore) {
-          if (!formData.maNccMacDinh) throw new Error("Vui lòng chọn nhà cung cấp mặc định để nhập thêm hàng.");
-          await PurchaseOrderService.nhapThemHang({
-            maNhaCungCap: Number(formData.maNccMacDinh),
-            maSanPham: Number(formData.id),
-            sanPham: { maSanPham: Number(formData.id), ...payload },
-            tonKhoNhap,
-            donGiaNhap: Number(formData.cost) || 0,
-            maKho: 1,
-            maNguoiDung: session.user?.sub ? Number(session.user?.sub) : 1,
-            soTienThanhToanNgay: 0,
-          });
-          showToast(`✅ Nhập thêm hàng cho sản phẩm "${formData.name}" thành công!`, "success");
-        } else {
-          await ProductService.update(formData.id, payload);
-          showToast(`✅ Cập nhật sản phẩm "${formData.name}" thành công!`, "success");
-        }
+        await ProductService.update(formData.id, payload);
+        showToast(`Cập nhật sản phẩm "${formData.name}" thành công!`, "success");
         setExpandedRowId(null);
       } else {
         await ProductService.create(payload);
         setModalOpen(false);
-        showToast(`✅ Thêm sản phẩm "${formData.name}" thành công!`, "success");
+        showToast(`Thêm sản phẩm "${formData.name}" thành công!`, "success");
       }
       await loadData();
     } catch (err) {
-      showToast(`❌ Lỗi: ${err.message}`, "error");
+      showToast(`Lỗi: ${err.message}`, "error");
     } finally {
       setSaving(false);
     }
@@ -1632,13 +1607,13 @@ export function ProductTable() {
       await ProductService.delete(deleteTarget.id);
       setDeleteTarget(null);
       await loadData();
-      showToast(`✅ Xóa sản phẩm "${deleteTarget.name}" thành công!`, "success");
+      showToast(`Xóa sản phẩm "${deleteTarget.name}" thành công!`, "success");
     } catch (err) {
       const msg = err.message || "";
       if (msg.includes("ràng buộc") || msg.includes("constraint") || msg.includes("foreign") || msg.includes("related")) {
-        showToast(`⚠️ Không thể xóa sản phẩm "${deleteTarget.name}" vì có dữ liệu liên quan trong hệ thống!`, "warning");
-      } else { 
-        showToast(`❌ Lỗi: ${msg}`, "error");
+        showToast(`Không thể xóa sản phẩm "${deleteTarget.name}" vì có dữ liệu liên quan trong hệ thống!`, "warning");
+      } else {
+        showToast(`Lỗi: ${msg}`, "error");
       }
     } finally {
       setDeleting(false);
@@ -1713,7 +1688,7 @@ export function ProductTable() {
             )}
             <div className="flex-1">
               <p className="text-sm font-semibold mb-1">
-                {importResult.successCount > 0 ? "✅ IMPORT THÀNH CÔNG" : "⚠️ IMPORT CÓ LỖI"}
+                {importResult.successCount > 0 ? "IMPORT THÀNH CÔNG" : "IMPORT CÓ LỖI"}
               </p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mb-2">
                 <div className="bg-emerald-100 dark:bg-emerald-900/30 rounded px-2 py-1">
@@ -1733,7 +1708,7 @@ export function ProductTable() {
                   <span className="font-bold text-blue-700 ml-1">{importResult.total}</span>
                 </div>
               </div>
-              
+
               {importResult.duplicates && importResult.duplicates.length > 0 && (
                 <details className="mt-2">
                   <summary className="text-xs font-medium cursor-pointer text-amber-600 hover:text-amber-700">
@@ -1752,7 +1727,7 @@ export function ProductTable() {
                   </div>
                 </details>
               )}
-              
+
               {importResult.errors && importResult.errors.length > 0 && (
                 <details className="mt-2">
                   <summary className="text-xs font-medium cursor-pointer text-red-600 hover:text-red-700">
