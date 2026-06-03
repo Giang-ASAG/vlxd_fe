@@ -67,7 +67,7 @@ export function PurchasePOS({ open, onClose, onSuccess }) {
         try {
             const [supplierRes, productRes] = await Promise.all([
                 SupplierService.getAll(),
-                ProductService.getAll(),
+                ProductService.getBySupplierId(0),
             ]);
             setSuppliers(supplierRes?.data ?? []);
             setProducts(productRes?.data ?? []);
