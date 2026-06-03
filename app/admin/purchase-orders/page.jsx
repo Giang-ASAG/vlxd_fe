@@ -93,6 +93,8 @@ function mapPurchaseOrder(order) {
     paid,
     debt: Math.max(0, toNumber(order?.soTienNo ?? order?.conNo ?? total - paid)),
     lines,
+    ghiChu: order?.ghiChu ?? order?.note ?? "",
+    note: order?.ghiChu ?? order?.note ?? "",
   };
 }
 
@@ -413,9 +415,9 @@ function PurchaseOrderDetail({ order, onCopy, onPrint, onUpdateOrder, onEditOrde
           </div>
 
           <div className="flex justify-end border-t pt-6">
-            <div className="mr-10 flex w-full max-w rounded-2xl border flex-col items-end gap-4 bg-muted/50 p-4 text-sm">
+            <div className="mr-10 flex w-full max-w rounded-2xl border flex-col items-start gap-4 bg-muted/50 p-4 text-sm">
                 <span className="text-muted-foreground">Ghi chú</span>
-                <span className="font-semibold tabular-nums">{order.ghiChu}</span>
+                <span className="font-semibold tabular-nums text-left">{order.ghiChu || "--"}</span>
               </div>
             <div className="w-full max-w-[420px] space-y-3 text-sm">
               <div className="flex justify-between">
