@@ -1057,8 +1057,9 @@ export function ProductForm({ product, danhMucs = [], setDanhMucs, suppliers = [
     if (
       !isBlank(form.tonKhoHienTai) &&
       !isBlank(form.tonKhoToiThieu) &&
-      Number(form.tonKhoHienTai) <= Number(form.tonKhoToiThieu)
-    ) errors.push("Tồn kho hiện tại phải lớn hơn tồn kho thấp nhất"); if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
+      Number(form.tonKhoHienTai) < Number(form.tonKhoToiThieu)
+    ) errors.push("Tồn kho hiện tại phải lớn hơn tồn kho thấp nhất");
+    if (!isBlank(form.tonKhoToiThieu) && Number(form.tonKhoToiThieu) < 0) errors.push("Tồn thấp nhất không được âm");
     if (!isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < 0) errors.push("Tồn cao nhất không được âm");
     if (!isBlank(form.tonKhoToiThieu) && !isBlank(form.tonKhoToiDa) && Number(form.tonKhoToiDa) < Number(form.tonKhoToiThieu)) {
       errors.push("Tồn cao nhất phải lớn hơn hoặc bằng tồn thấp nhất");
